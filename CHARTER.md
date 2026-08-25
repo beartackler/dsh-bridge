@@ -24,13 +24,15 @@ A single DSH plugin (plus supporting repo) that delivers:
 4. **Curated discovery.** English-first catalog with quality+trust tiers, screenshots that meet a design bar, and one-command install (`/bridge:install <plugin>`). Integrates with dsh-find-plugin / native market where useful.
 5. **Impeccable UI within DSH design system.** Onboarding wizard, plugin browser, trust report cards. Follows BRAND_GUIDELINES.md in the DSH repo.
 
-## Non-Negotiable Principles
+## Non-Negotiable Principles (ponytail-tailored, release-blocking)
 
-- **Trust over speed:** every claim about a third-party plugin must cite evidence (file:line).
-- **English-first, i18n-ready.**
-- **No slop:** code quality bar enforced by review gates. If it looks vibe-coded, it doesn't ship.
-- **User owns their machine:** no telemetry without opt-in, no network calls except documented ones.
-- **License hygiene:** respect upstream licenses (ponytail ports show the pattern: upstream MIT attribution).
+1. **Trust over speed:** every claim about a third-party plugin must cite evidence (file:line).
+2. **English-first, i18n-ready.** Plain words, short sentences.
+3. **Ponytail discipline:** shortest correct implementation. No speculative features, no premature abstraction. Delete before add.
+4. **No emoji anywhere in repo artifacts** (docs, code, UI copy, commits). Structure carries tone.
+5. **No marketing fluff:** no "blazingly fast", no "10x". Facts, evidence, commands, screenshots.
+6. **User owns their machine:** no telemetry without opt-in, no network calls except documented ones.
+7. **License hygiene:** respect upstream licenses (dsh-ponytail shows the pattern: upstream MIT attribution).
 
 ## Star Strategy (why people will star this)
 

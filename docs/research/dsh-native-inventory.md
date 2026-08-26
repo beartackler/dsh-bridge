@@ -38,7 +38,7 @@
 | Jobs (`job_list`/`job_output`/`job_kill`) | `packages/jobs/*` | background task management | **SKIP** |
 | Code Mode (`run_code`) | `packages/core/tools/src/code-mode.ts` | — (DSH exceeds peers here) | **SKIP** (but **market** it) |
 
-**Count: 25 capability areas surveyed. 14 SKIP, 7 WRAP, 4 IMPROVE. Zero require a from-scratch port.**
+**Count: 25 capability areas surveyed. 15 SKIP, 6 WRAP, 4 IMPROVE. Zero require a from-scratch port.**
 
 ---
 
@@ -381,7 +381,15 @@ Sibling `packages/client/ui-settings-plugins` owns the **Plugin configuration** 
 
 Shipped bundles: `base` (the shared core every profile applies first), `web-app`, `headless`.
 
-**Verdict: WRAP.** Installation forwards to pnpm — meaning **install runs arbitrary npm lifecycle scripts before any plugin code is even loaded**. Our verified-installer must audit *before* invoking `dsh plugin add`, and should consider `--ignore-scripts` in its recommended flow. This is the single strongest technical justification for the trust layer, and it should be stated plainly in the README.
+**Verdict: WRAP.** Installation forwards to pnpm, and under pnpm >= 10 (what `dsh plugin` invokes; the reference checkout pins `pnpm@11.7.0`) dependency lifecycle scripts are **not** unconditional: pnpm refuses to run a dependency's `prepare`/build script until the user explicitly allowlists the package via `allowBuilds: { <pkg>: true }` in the profile's `pnpm-workspace.yaml` and re-runs the `add` (`docs/user/develop/basic/publish.md`, "Installing from GitHub"; see also `dsh-capability-seams.md` §2, which documents the same gate). The upstream docs name the allowance for what it is: "permission to execute the package's code on your machine at install time, outside any sandbox the agent runs under", with `github:owner/repo#<sha>` pinning recommended.
+
+Observable install-flow symptoms, stated so acceptance tests can assert them:
+
+- **Before allowlisting:** the first `dsh plugin --profile <name> add github:owner/repo` fails because pnpm blocks the git dependency's `prepare` script; the flow surfaces the exact package key pnpm printed for copying into `allowBuilds`.
+- **After allowlisting:** the package's lifecycle scripts execute on the user's machine at install time, outside agent sandboxing. That allowance can be granted before any dsh-bridge audit runs, which makes it the trust boundary.
+- **Prebuilt distributions:** npm packages with `lib/` built at publish time, or shipped tarballs, need no build allowance (per `publish.md`); these remain the low-friction path for vetted plugins.
+
+Consequence unchanged, mechanism corrected: install-time code execution is real but conditional on a user-granted allowance, not automatic. Our verified-installer must treat the moment a user allowlists a build as the trust boundary: audit *before* guiding the user through `allowBuilds`, repeat the upstream warning plus `#<sha>` pinning, and consider `--ignore-scripts` in the recommended flow. This remains the single strongest technical justification for the trust layer, and it should be stated plainly in the README.
 
 ---
 
@@ -408,3 +416,12 @@ Ordered by (value × uniqueness) ÷ effort, given everything above:
 - What exactly does `ctx.remote.pluginInventory.list()` return (`packages/api/remotes`)? Determines how much provenance the trust card can show without new Host work.
 - Can a command name contain `:`? `parseCommand()` accepts letters, digits, `_`, `-` — so `/bridge:install` is **not** parseable. Confirm and pick the namespace convention (`/bridge-install` vs. a single `/bridge` with subcommand grammar) before any command copy is written; the CHARTER currently assumes the unparseable form.
 - `packages/guard/*` (`repeat-tool-reminder`, `timeout-policy`) and `packages/interaction/user-approval` were only skimmed; both are relevant to the trust story's runtime half.
+
+---
+
+## Revision 1
+
+2026-08-26, addressing the applicable minors from `docs/reviews/research-docs-review.md` for this file:
+
+- Corrected the §0 verdict tally from "14 SKIP, 7 WRAP" to "15 SKIP, 6 WRAP" to match the table's own verdict column (reviewer finding 2).
+- Reworded §12.4 so install-time lifecycle-script execution is described as gated by pnpm >= 10 `allowBuilds` instead of unconditional, verified against `apps/cli/src/args.ts:171` and `docs/user/develop/basic/publish.md` in the reference checkout (reviewer finding 3 and the cross-document tension with `dsh-capability-seams.md` §2). Added observable install-flow symptoms (pre-allowlist failure, post-allowlist execution, prebuilt path) so acceptance tests can assert them; this file has no Impact-column tables, so the symptom text lives in §12.4 directly. The conclusion (audit before install; the allowance is the trust boundary) is unchanged.

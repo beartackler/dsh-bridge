@@ -22,8 +22,8 @@ Ordered by (value desc, difficulty asc) — i.e. best return per unit of work fi
 | 2 | `/model` — switch model mid-session, show current | CC, Codex (`/model`, `--model`), OpenCode, Jcode | **S** | **5** | DSH has model selection UI (`ui-model-selection`) and pi-ai routes; bridge value is the *typed command with fuzzy alias* (`/model sonnet`, `/model gpt-5`, `/model deepseek-chat`) mapping familiar names onto DSH routes. |
 | 3 | `/init` — scan repo, generate `AGENTS.md`/`CLAUDE.md` | CC (`/init`), Codex (`/init`), OpenCode, Jcode | **S** | **5** | Pure prompt-template skill; DSH already *reads* `AGENTS.md`/`CLAUDE.md` via `dsh-agent-instructions`, so the generated file works immediately. Highest value-to-effort ratio in the whole list. |
 | 4 | `/login` / connectors — guided provider auth | CC (`/login` OAuth), Codex (`codex login`), OpenCode (`opencode auth login`), Jcode | **M** | **5** | See §4. DSH has `ctx.credentials` with a writable `$DSH_HOME/.credentials.yaml` layer; the missing piece is *detection + guided wizard + smoke test*, not storage. Charter's headline flow. |
-| 5 | `/clear` — reset conversation, keep session | CC, Codex, OpenCode, Jcode | **S** | **5** | DSH exposes `/new` and session lifecycle; `/clear` is an alias-with-expected-semantics. Muscle memory is near-reflex. |
-| 6 | `/resume` — pick a past session from a list | CC (`claude --resume`), Codex (`codex resume`), OpenCode, Jcode | **M** | **5** | DSH has `session-persistence`, `session-query`, `/sessions`. Bridge ports the *picker UX* (recent-first, title, cwd, age) as a `popupSelect` client contribution. |
+| 5 | `/clear` — reset conversation, keep session | CC, Codex, OpenCode, Jcode | **M** | **5** | **Not native.** No `/new`, `/clear`, or any session-lifecycle command is registered in DSH (see Revision 1). Bridge must wire the create-session/reset semantics itself rather than alias an existing command. Muscle memory is near-reflex. |
+| 6 | `/resume` — pick a past session from a list | CC (`claude --resume`), Codex (`codex resume`), OpenCode, Jcode | **M** | **5** | DSH has `session-persistence` and `session-query` as services, but **no `/sessions` or `/resume` command** (confirmed absent; see Revision 1). Bridge ports the *picker UX* (recent-first, title, cwd, age) as a `popupSelect` client contribution on top of those services. |
 | 7 | Plan mode / read-only mode toggle | CC (Shift+Tab plan mode), Codex (`--sandbox read-only`), Jcode | **S** | **5** | DSH ships `dsh-plan-mode` (`/plan [message]`) and `permission-presets` (`read-only`, `ask`, `danger-full-access`). Mostly an *alias + keybinding + status indicator* job, not new machinery. |
 | 8 | Permission/approval presets, incl. YOLO mode | CC (`--dangerously-skip-permissions`), Codex (`--full-auto`, `--yolo`, `--ask-for-approval`), OpenCode | **S** | **5** | Map each harness's flag vocabulary onto DSH `permission-presets`. Must keep the scary name scary: refugees search for the exact string `--dangerously-skip-permissions`. |
 | 9 | `/compact` — summarize history to reclaim context | CC, Codex, OpenCode, Jcode | **S** | **4** | **Already native**: `@deepseek-ai/dsh-command-compact` registers `/compact` globally. Bridge should only add `/compact <focus-instructions>` parity if DSH's handler ignores args *(verify)*. |
@@ -64,8 +64,8 @@ The minimum set that makes a Claude Code or Codex refugee stop noticing they swi
 2. **`/login` (connectors wizard)** — detect existing credentials, pick routes, smoke-test, never print secrets. See §4.
 3. **`/init`** — generate `AGENTS.md` from the repo. DSH already reads the result, so the payoff is immediate.
 4. **`/model`** — switch and show, with familiar aliases resolving to DSH routes.
-5. **`/clear` + `/resume` (+ `--continue`)** — session reflexes; three commands, one session-picker component.
-6. **Permission presets with familiar flag names** — `--dangerously-skip-permissions`, `--full-auto`, `--yolo`, `--ask-for-approval` mapped onto DSH presets, with plan mode reachable by Shift+Tab.
+5. **Permission presets with familiar flag names** — `--dangerously-skip-permissions`, `--full-auto`, `--yolo`, `--ask-for-approval` mapped onto DSH presets, with plan mode reachable by Shift+Tab.
+6. **`/clear` + `/resume` (+ `--continue`)** — session reflexes, moved down one slot: none of these commands is native in DSH (Revision 1), so this is real port work — create/reset wiring plus a session-picker over `session-query` — not cheap aliasing.
 7. **`/doctor`** — one command that proves the install works: credentials reachable, model responding, sandbox functional, MCP servers reachable. Doubles as the bug-report artifact and the trust story's front door.
 8. **Custom markdown commands** — read `.claude/commands/**/*.md` and `.opencode/command/*.md` into `ctx.skills` with `$ARGUMENTS` substitution. Users bring their own muscle memory with them.
 9. **`/mcp` management** — list, add, remove, test servers by editing the profile patch instead of hand-editing `cordis.yml`.
@@ -159,3 +159,15 @@ Detection order, most-specific first. **Read-only probing; never copy a secret i
 - Does native `/compact` accept focus instructions after the command name? *(verify)*
 - Namespacing: `/bridge:install` implies colon-namespaced commands, but the parser's name grammar is letters/digits/`_`/`-`. Confirm whether `:` is legal in a command name, or whether bridge must use `/bridge-install`. **This blocks the command-naming decision for the whole plugin.**
 - Can a plugin register a command name that shadows a native one (e.g. `/compact` with arg support) at the agent layer, and is that desirable? The registry says nearest-layer-wins with duplicates failing *within* one layer — so shadowing appears legal but should be used sparingly.
+
+---
+
+## Revision 1 (2026-08-25)
+
+Corrected after adversarial review against the reference checkout. Full enumeration of `commands.register({` across `packages/` and `apps/` finds exactly six registered slash commands — `compact`, `feedback`, `goal`, `permission`, `export`, `plan` — plus the client-side `model` popup (`ui-model-selection`). There is no `/new`, `/sessions`, or `/clear` registration anywhere, server or client.
+
+- Row 5 (`/clear`): the claim that "DSH exposes `/new` and session lifecycle" was wrong. Difficulty raised S → M: bridge implements the reset/create semantics itself.
+- Row 6 (`/resume`): `/sessions` does not exist. `session-persistence` and `session-query` are services with no command surface; the picker remains M-sized port work built on them.
+- MVP cut: the session cluster dropped from item 5 to item 6, swapped with permission presets, because it is genuine port work rather than aliasing. The underlying services exist, so the build target stands.
+
+Ranked-table indices were left stable to preserve cross-references (e.g. row 33's "top of #6"), so the value-5 block is no longer perfectly difficulty-sorted.

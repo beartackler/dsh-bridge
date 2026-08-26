@@ -1,0 +1,55 @@
+name: Docs Lint
+
+# Standalone docs gate so markdown problems fail fast, independent of code CI.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "scripts/lint-docs.mjs"
+  pull_request:
+    paths:
+      - "**.md"
+      - "docs/**"
+      - "scripts/lint-docs.mjs"
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  docs-lint:
+    name: Markdown fences, links, placeholders, catalog manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run docs linter
+        run: node scripts/lint-docs.mjs
+
+  catalog-manifest:
+    name: Catalog manifest schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate docs/catalog/manifest.json when present
+        run: |
+          if [ -f docs/catalog/manifest.json ]; then
+            echo "::notice::validating docs/catalog/manifest.json schema via lint-docs manifest check"
+            # The full docs lint already validates the manifest; this job surfaces it explicitly.
+            node scripts/lint-docs.mjs
+          else
+            echo "docs/catalog/manifest.json not present yet; skipping."
+          fi

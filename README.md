@@ -48,7 +48,7 @@ Grades: **A** verified-clean · **B** safe with documented behavior · **C** use
 
 ## Commands
 
-Each command is specified before it is written. Status of all sixteen: spec, not implemented.
+All seventeen commands are implemented and verified end-to-end against `@deepseek-ai/dsh` 0.1.1-rc.2 (42 live invocations, see [the verification report](docs/research/e2e-verification.md)).
 
 | Command | Does |
 |---|---|
@@ -68,6 +68,7 @@ Each command is specified before it is written. Status of all sixteen: spec, not
 | [`/trust`](docs/specs/commands/trust.md) | Prints a plugin's trust report card with its evidence. |
 | [`/install`](docs/specs/commands/install.md) | Installs a plugin, preferring verified builds and requiring explicit risk consent. |
 | [`/suggest`](docs/specs/commands/suggest.md) | Handles the dead end: scaffolds the plugin that does not exist yet. |
+| [`/refactor`](docs/specs/commands/refactor.md) | Plans and applies behavior-preserving restructuring, tests-green gated. |
 
 Naming caveat: shipped names will be either `/bridge:<name>` or `/bridge-<name>`, pending an open DSH parser question.
 
@@ -86,8 +87,8 @@ Under active development. Research and audit artifacts land in `docs/` as they a
 |---|---|
 | Capability research | in progress |
 | Adversarial audit of DSH built-ins | in progress |
-| MVP plugin (commands, connectors) | next |
-| Trust report card pipeline | planned |
+| MVP plugin (commands, connectors) | shipped - 17 commands e2e-verified in dsh 0.1.1-rc.2 |
+| Trust report card pipeline | shipped - 24 plugins graded (7 B, 16 C, 1 D) |
 | Onboarding wizard UI | planned |
 
 ## Principles

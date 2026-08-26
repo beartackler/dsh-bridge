@@ -9,14 +9,14 @@
 
 This spec is written against the existing DSH web client conventions. Two upstream documents govern it:
 
-- **Styling.** [`reference/deepseek-harness/docs/web-styling.md`](../../../reference/deepseek-harness/docs/web-styling.md):
+- **Styling.** [`reference/deepseek-harness/docs/web-styling.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/web-styling.md):
   - "Use CSS Modules and `clsx`; do not add a component library or Tailwind." (line 15) — the wizard ships **no** new UI dependency. Every component in this spec is a plain React component with a co-located `.module.css`.
   - "Use `--dsw-alias-*` semantic tokens in feature components. Do not copy static palette values or write literal colors there." (line 16) — every color, spacing, radius, and motion value named below is a *semantic alias reference*, never a hex literal. If an alias for a state does not exist, it is added in `ui-theme/src/styles/` first ("Changing the system", line 25).
   - "Keep theme selectors out of feature component CSS." (line 17) — the wizard has **no** light/dark branches. It inherits the resolved theme snapshot applied by `ui-layout` (line 9).
   - "Pair font sizes with line heights and use the theme typography variables when an existing role matches." (line 18) — copy roles below map to existing typography variables, not ad-hoc sizes.
   - "Preserve keyboard focus visibility and reduced-motion behavior when adding transitions or hover-only controls." (line 21) — governs §7 accessibility and every transition in §6.
   - "Put presentation in CSS. Inline React styles may pass component-local custom-property values but must not encode theme branches." (line 20) — the step progress bar passes `--wizard-progress` inline; nothing else is inline.
-- **Naming and brand.** [`reference/deepseek-harness/BRAND_GUIDELINES.md`](../../../reference/deepseek-harness/BRAND_GUIDELINES.md):
+- **Naming and brand.** [`reference/deepseek-harness/BRAND_GUIDELINES.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/BRAND_GUIDELINES.md):
   - Product name in UI chrome is **"dsh-bridge"**, using the abbreviated "DSH" designation (line 8). The full "DeepSeek Harness" trademark never appears in a title, button, or product name (line 9).
   - Descriptive copy may say "built on DeepSeek Harness" (line 7) — used once, in the wizard footer, and nowhere else.
   - No official brand marks, logos, or DeepSeek visual assets appear in the wizard; nothing implies official endorsement (line 10).
@@ -650,5 +650,5 @@ Every error surface uses the semantic danger/warning **aliases** from `ui-theme`
 ## 9. References
 
 - [`CHARTER.md`](../../CHARTER.md) — connectors flow scope (line 18), UI-within-design-system requirement (line 25), no-secret-printing and machine-ownership principles (lines 18, 32), profile config path (line 54).
-- [`reference/deepseek-harness/docs/web-styling.md`](../../../reference/deepseek-harness/docs/web-styling.md) — CSS Modules + `clsx`, no component library or Tailwind (line 15); `--dsw-alias-*` semantic tokens (line 16); no theme selectors in feature CSS (line 17); typography pairing (line 18); presentation in CSS (line 20); focus visibility and reduced motion (line 21); changing the system via `ui-theme` (line 25).
-- [`reference/deepseek-harness/BRAND_GUIDELINES.md`](../../../reference/deepseek-harness/BRAND_GUIDELINES.md) — descriptive-use allowance (line 7); "DSH" naming preference (line 8); no trademark in product names (line 9); no implied endorsement (line 10).
+- [`reference/deepseek-harness/docs/web-styling.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/web-styling.md) — CSS Modules + `clsx`, no component library or Tailwind (line 15); `--dsw-alias-*` semantic tokens (line 16); no theme selectors in feature CSS (line 17); typography pairing (line 18); presentation in CSS (line 20); focus visibility and reduced motion (line 21); changing the system via `ui-theme` (line 25).
+- [`reference/deepseek-harness/BRAND_GUIDELINES.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/BRAND_GUIDELINES.md) — descriptive-use allowance (line 7); "DSH" naming preference (line 8); no trademark in product names (line 9); no implied endorsement (line 10).

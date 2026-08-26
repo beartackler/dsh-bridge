@@ -2,7 +2,7 @@
 
 Plain-English translations of DeepSeek Harness (DSH) and Cordis jargon for refugees from Claude Code, Codex, OpenCode, and Jcode. One sentence per concept, one analogy per concept, and a citation into the upstream checkout (`../../reference/deepseek-harness/`, shallow clone of master). Where the two canonical primers don't cover a term, we cite the upstream doc that does — never guess.
 
-Primary sources: [`docs/glossary.md`](../../reference/deepseek-harness/docs/glossary.md) and [`docs/cordis-primer.md`](../../reference/deepseek-harness/docs/cordis-primer.md).
+Primary sources: [`docs/glossary.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/glossary.md) and [`docs/cordis-primer.md`](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/cordis-primer.md).
 
 ---
 

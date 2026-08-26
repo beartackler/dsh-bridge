@@ -91,8 +91,10 @@ export declare function smokeProvider(provider: string, options?: SmokeOptions):
 export declare function renderSmoke(ctx: BridgeContext, provider: string, outcome: SmokeOutcome): string;
 /** Parse `/connect ...` args (shared `_`/`rest` convention) into an invocation. */
 export interface ConnectInvocation {
-    readonly mode: "list" | "test";
+    readonly mode: "list" | "test" | "apply";
     readonly provider?: string;
+    /** Explicit consent for the `apply` write (`--apply`). */
+    readonly confirmed?: boolean;
 }
 export declare function parseConnectArgs(args: Readonly<Record<string, string>>): ConnectInvocation;
 /** Phase-1 runner: detection matrix by default; `test <provider>` for the smoke. */

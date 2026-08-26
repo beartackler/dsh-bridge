@@ -12,6 +12,7 @@
  * S5 plugin/trust-card staleness from docs/catalog/INDEX.md verified dates,
  * and S6 token usage when ctx provides it.
  */
+import { type DriftEntry } from "../lib/drift.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 /** A catalog card older than this many days is stale (task + spec S5). */
 export declare const STALE_AFTER_DAYS = 30;
@@ -106,10 +107,12 @@ export declare function collectStatus(inputs: StatusInputs, readFile: (path: str
 /** Locate docs/catalog/INDEX.md by walking up from this compiled module. */
 export declare function resolveIndexPath(startDir?: string): string | undefined;
 /** Render collected rows into the dashboard markdown. */
-export declare function renderStatus(ctx: BridgeContext, collected: CollectedStatus, installedCount: number): string;
+export declare function renderStatus(ctx: BridgeContext, collected: CollectedStatus, installedCount: number, drift?: readonly DriftEntry[]): string;
 /** `/bridge-status` runner. Read-only; zero network calls by construction. */
 export declare function runStatus(ctx: BridgeContext, _args: Readonly<Record<string, string>>, options?: {
     readonly services?: StatusServices;
     readonly indexPath?: string;
+    /** Injected in tests; production reads the recorded audit hashes. */
+    readonly drift?: readonly DriftEntry[];
 }): Promise<CommandResult>;
 //# sourceMappingURL=status.d.ts.map

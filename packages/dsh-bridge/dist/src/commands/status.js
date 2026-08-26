@@ -14,6 +14,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { driftStatusLine, installedDrift } from "../lib/drift.js";
 import { gradeCell, heading } from "../lib/output.js";
 /** A catalog card older than this many days is stale (task + spec S5). */
 export const STALE_AFTER_DAYS = 30;
@@ -227,13 +228,18 @@ function countInstalled(dshHome, profile) {
     }
 }
 /** Render collected rows into the dashboard markdown. */
-export function renderStatus(ctx, collected, installedCount) {
+export function renderStatus(ctx, collected, installedCount, drift = []) {
     const blocks = [
         heading("dsh-bridge status"),
         "",
         ctx.output.card("STATUS", collected.rows.map((row) => [row.label, row.value])),
         "",
     ];
+    // Drift watch: exactly one line, and only when something actually moved. A
+    // zero-count reassurance banner would train the user to ignore the line.
+    const drifted = driftStatusLine(drift);
+    if (drifted !== null)
+        blocks.push(drifted, "");
     if (collected.staleCards.length > 0) {
         blocks.push(`Stale cards (> ${STALE_AFTER_DAYS} days since verification):`, "");
         blocks.push(ctx.output.table(["GRADE", "PLUGIN", "VERIFIED"], collected.staleCards.map((entry) => [gradeCell(entry.grade), entry.plugin, entry.verifiedOn ?? "?"])));
@@ -254,9 +260,10 @@ export async function runStatus(ctx, _args, options = {}) {
         indexMdPath: indexPath,
         services,
     }, (path) => (path === "" ? "" : readFileSync(path, "utf8")));
+    const drift = options.drift ?? installedDrift(ctx.paths.home, ctx.paths.dshHome, ctx.profile);
     return {
-        markdown: renderStatus(ctx, collected, countInstalled(ctx.paths.dshHome, ctx.profile)),
-        data: { rows: collected.rows, staleCards: collected.staleCards },
+        markdown: renderStatus(ctx, collected, countInstalled(ctx.paths.dshHome, ctx.profile), drift),
+        data: { rows: collected.rows, staleCards: collected.staleCards, drift },
     };
 }
 //# sourceMappingURL=status.js.map

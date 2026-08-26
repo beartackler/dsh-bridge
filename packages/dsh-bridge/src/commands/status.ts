@@ -16,6 +16,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { driftStatusLine, installedDrift, type DriftEntry } from "../lib/drift.js";
 import { gradeCell, heading } from "../lib/output.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 
@@ -315,7 +316,12 @@ function countInstalled(dshHome: string, profile: string): number {
 }
 
 /** Render collected rows into the dashboard markdown. */
-export function renderStatus(ctx: BridgeContext, collected: CollectedStatus, installedCount: number): string {
+export function renderStatus(
+  ctx: BridgeContext,
+  collected: CollectedStatus,
+  installedCount: number,
+  drift: readonly DriftEntry[] = [],
+): string {
   const blocks: string[] = [
     heading("dsh-bridge status"),
     "",
@@ -325,6 +331,11 @@ export function renderStatus(ctx: BridgeContext, collected: CollectedStatus, ins
     ),
     "",
   ];
+
+  // Drift watch: exactly one line, and only when something actually moved. A
+  // zero-count reassurance banner would train the user to ignore the line.
+  const drifted = driftStatusLine(drift);
+  if (drifted !== null) blocks.push(drifted, "");
 
   if (collected.staleCards.length > 0) {
     blocks.push(`Stale cards (> ${STALE_AFTER_DAYS} days since verification):`, "");
@@ -349,7 +360,12 @@ export function renderStatus(ctx: BridgeContext, collected: CollectedStatus, ins
 export async function runStatus(
   ctx: BridgeContext,
   _args: Readonly<Record<string, string>>,
-  options: { readonly services?: StatusServices; readonly indexPath?: string } = {},
+  options: {
+    readonly services?: StatusServices;
+    readonly indexPath?: string;
+    /** Injected in tests; production reads the recorded audit hashes. */
+    readonly drift?: readonly DriftEntry[];
+  } = {},
 ): Promise<CommandResult> {
   void _args;
   const services: StatusServices = options.services ?? {};
@@ -363,8 +379,9 @@ export async function runStatus(
     },
     (path) => (path === "" ? "" : readFileSync(path, "utf8")),
   );
+  const drift = options.drift ?? installedDrift(ctx.paths.home, ctx.paths.dshHome, ctx.profile);
   return {
-    markdown: renderStatus(ctx, collected, countInstalled(ctx.paths.dshHome, ctx.profile)),
-    data: { rows: collected.rows, staleCards: collected.staleCards },
+    markdown: renderStatus(ctx, collected, countInstalled(ctx.paths.dshHome, ctx.profile), drift),
+    data: { rows: collected.rows, staleCards: collected.staleCards, drift },
   };
 }

@@ -1,11 +1,18 @@
 /**
  * /bridge-mcp - MCP server management (docs/specs/commands/mcp.md).
  *
- * MVP slice, per the task contract:
- *  - list / add / remove / test / import-from subcommands over a ctx-injected
- *    config path (BridgeContext.paths.profilePatch), parsed as JSON for this
- *    iteration (YAML emission is phase-2; the shape mirrors the plugin
- *    instance list documented in packages/mcp/mcp-client/README.md).
+ * MVP slice, per the task contract (docs/reviews/eng-quality-review.md #1):
+ *  - list / add / remove / test / import-from subcommands over the
+ *    bridge-owned JSON store at `$HOME/.dsh-bridge/mcp.json` (same precedent
+ *    as memory.ts; the shape mirrors the plugin instance list documented in
+ *    packages/mcp/mcp-client/README.md).
+ *  - add / remove write ONLY the bridge store. DSH reads MCP servers from the
+ *    user's profile patch (cordis.patch.yml); when a native registration is
+ *    still needed, the exact YAML fragment is emitted as a copy-paste block
+ *    with paste instructions. The user's patch file is never opened for
+ *    writing by this module.
+ *  - Old MCP entries inside the profile patch are detected read-only and
+ *    reported with move instructions (migration notice on list/add/remove).
  *  - import-from claude reads ~/.claude.json `mcpServers` (plus
  *    projects.<cwd>.mcpServers): existence + parse checks only; conversion is
  *    reported as a mapping table, nothing is written to source configs.
@@ -15,11 +22,12 @@
  * Invariants carried from the spec and CHARTER.md:
  *  - Never echo secret values; env/header values are redacted to
  *    {"$env":"NAME"} in JSON and masked in rendered tables.
- *  - Mutating commands print the absolute config path before writing
+ *  - Mutating commands print the absolute store path before writing
  *    (acceptance 34) and honor --dry-run (nothing written).
  *  - Every DSH-behavior claim cites the reference checkout (acceptance 35).
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { card, heading, table } from "../lib/output.js";
 /** The two transports DSH supports (mcp-client/src/index.ts:107-121). */
 export const TRANSPORTS = ["stdio", "streamable-http"];
@@ -37,25 +45,41 @@ export function nodeMcpIo() {
     return {
         exists: (path) => existsSync(path),
         readFile: (path) => readFileSync(path, "utf8"),
-        writeFile: (path, content) => writeFileSync(path, content),
+        writeFile: (path, content) => {
+            // Bridge-owned store only: create the parent directory like memory.ts
+            // does, and keep the file private (env values are stored verbatim).
+            mkdirSync(dirname(path), { recursive: true });
+            writeFileSync(path, content, { encoding: "utf8", mode: 0o600 });
+        },
     };
 }
 // ---------------------------------------------------------------------------
-// Config load / store (JSON this iteration; YAML rendering is phase 2)
+// Bridge-owned store location (memory.ts precedent: never a native DSH path)
+// ---------------------------------------------------------------------------
+/** Directory the bridge owns for MCP state. Never a native DSH path. */
+export function mcpStoreDir(home) {
+    return join(home, ".dsh-bridge");
+}
+/** The single bridge-managed MCP store file. */
+export function mcpStorePath(home) {
+    return join(mcpStoreDir(home), "mcp.json");
+}
+// ---------------------------------------------------------------------------
+// Store load / save (JSON only; the profile patch stays YAML, untouched)
 // ---------------------------------------------------------------------------
 function isRecord(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-/** Read instances out of the target config. Absent file means empty config. */
-export function loadInstances(io, configPath) {
-    if (!io.exists(configPath))
+/** Read instances out of the bridge store. Absent file means empty config. */
+export function loadInstances(io, storePath) {
+    if (!io.exists(storePath))
         return [];
     let raw;
     try {
-        raw = io.readFile(configPath);
+        raw = io.readFile(storePath);
     }
     catch (error) {
-        throw new McpError(`config not readable: ${configPath} (${error.message})`);
+        throw new McpError(`store not readable: ${storePath} (${error.message})`);
     }
     if (raw.trim() === "")
         return [];
@@ -64,15 +88,15 @@ export function loadInstances(io, configPath) {
         parsed = JSON.parse(raw);
     }
     catch {
-        throw new McpError(`config is not valid JSON for this iteration (JSON store expected): ${configPath}`);
+        throw new McpError(`store is not valid JSON: ${storePath}`);
     }
     if (!isRecord(parsed))
-        throw new McpError(`config root must be an object: ${configPath}`);
+        throw new McpError(`store root must be an object: ${storePath}`);
     const servers = parsed["servers"];
     if (servers === undefined)
         return [];
     if (!Array.isArray(servers))
-        throw new McpError(`"servers" must be an array of instances: ${configPath}`);
+        throw new McpError(`"servers" must be an array of instances: ${storePath}`);
     const entries = [];
     for (const rawEntry of servers) {
         if (!isRecord(rawEntry))
@@ -89,12 +113,12 @@ export function loadInstances(io, configPath) {
     }
     return entries;
 }
-function writeInstances(io, configPath, entries) {
+function writeInstances(io, storePath, entries) {
     const body = {
         schema: "dsh-bridge.mcp/v1",
         servers: entries.map((entry) => ({ id: entry.id, name: entry.name, config: entry.config })),
     };
-    io.writeFile(configPath, `${JSON.stringify(body, null, 2)}\n`);
+    io.writeFile(storePath, `${JSON.stringify(body, null, 2)}\n`);
 }
 // ---------------------------------------------------------------------------
 // Pure helpers (validation, normalization, redaction)
@@ -193,6 +217,9 @@ function usageMarkdown() {
         "Transports: stdio | streamable-http (packages/mcp/mcp-client/src/index.ts:107-121).",
         "DSH has no sse transport; see the import mapping notes.",
         "",
+        "Storage: servers live in the bridge-owned store (~/.dsh-bridge/mcp.json).",
+        "Your profile patch is never written; add/remove print a yaml fragment to paste.",
+        "",
     ].join("\n");
 }
 // ---------------------------------------------------------------------------
@@ -253,10 +280,23 @@ function yamlishBlock(entry) {
     }
     return lines;
 }
-function renderPreview(action, configPath, entry) {
+/**
+ * Copy-paste instructions that accompany a yaml block. The user pastes the
+ * fragment into their own profile patch; this module never writes it.
+ */
+function pasteInstructions() {
+    return [
+        "To register with DSH natively, copy the yaml block above into your profile patch:",
+        "paste under the top-level list in the active profile's cordis.patch.yml",
+        "(default: ~/.dsh/profiles/<profile>/cordis.patch.yml).",
+        "The bridge never edits that file; this step is yours.",
+        "",
+    ];
+}
+function renderPreview(action, storePath, entry) {
     return [
         heading(`/bridge-mcp ${action}`),
-        `Config target: ${configPath}`,
+        `Store target: ${storePath}`,
         "",
         "```yaml",
         ...yamlishBlock(entry),
@@ -264,21 +304,105 @@ function renderPreview(action, configPath, entry) {
         "",
     ].join("\n");
 }
-// ---------------------------------------------------------------------------
-// Subcommand implementations
-// ---------------------------------------------------------------------------
+/**
+ * Detect MCP server instances inside the user's cordis.patch.yml without ever
+ * writing to it. The patch is a YAML document; this scan is deliberately
+ * line-based so no YAML parser dependency enters the bridge. A list item is
+ * reported when it carries the mcp-client name or a serverName field. Parse
+ * trouble degrades to an honest note rather than an exception.
+ */
+export function detectPatchEntries(io, patchPath) {
+    if (!io.exists(patchPath))
+        return { patchPath, entries: [] };
+    let raw = "";
+    try {
+        raw = io.readFile(patchPath);
+    }
+    catch (error) {
+        return { patchPath, entries: [], error: error.message };
+    }
+    const lines = raw.split(/\r?\n/);
+    const entries = [];
+    let index = -1;
+    let depth = 0; // fence depth for ``` blocks
+    let currentName = "";
+    let matched = false;
+    const flush = () => {
+        if (index >= 0 && matched && currentName !== "") {
+            entries.push({ serverName: currentName, index });
+        }
+        matched = false;
+        currentName = "";
+    };
+    for (const rawLine of lines) {
+        const line = rawLine.replace(/[ \t]+$/, "");
+        if (/^\s*```/.test(line)) {
+            depth += depth > 0 ? -1 : 1;
+            continue;
+        }
+        if (depth > 0 || /^\s*#/.test(line))
+            continue;
+        const itemMatch = /^-\s*(.*)$/.exec(line);
+        if (itemMatch !== null) {
+            // Top-level list item boundary.
+            flush();
+            index += 1;
+            const body = itemMatch[1] ?? "";
+            if (/['"]?@deepseek-ai\/dsh-mcp-client/.test(body))
+                matched = true;
+            const nameMatch = /(?:^|[\s{[])serverName:\s*['"]?([A-Za-z0-9_.:-]+)/.exec(` ${body}`);
+            if (nameMatch !== null) {
+                currentName = nameMatch[1] ?? "";
+                matched = true;
+            }
+            continue;
+        }
+        if (index < 0)
+            continue;
+        const nameMatch = /(?:^|[\s{[])serverName:\s*['"]?([A-Za-z0-9_.:-]+)/.exec(` ${line.trim()}`);
+        if (nameMatch === null)
+            continue;
+        if (currentName === "") {
+            currentName = nameMatch[1] ?? "";
+            matched = true;
+        }
+    }
+    flush();
+    return { patchPath, entries };
+}
+/** User-facing migration notice lines when legacy patch entries exist. */
+function migrationNotice(migration) {
+    if (migration.entries.length === 0)
+        return [];
+    const names = migration.entries.map((entry) => entry.serverName).join(", ");
+    return [
+        `Migration available: ${migration.entries.length} MCP entr${migration.entries.length === 1 ? "y" : "ies"} found in your profile patch (${names}).`,
+        `File: ${migration.patchPath}`,
+        "To move them:",
+        "1. Remove each entry from the patch file by hand (the bridge never edits it).",
+        "2. Re-add here with `/bridge-mcp add <name> stdio|http ...` - the same fields apply verbatim.",
+        "3. Verify with `/bridge-mcp list`.",
+        "",
+    ];
+}
 function runList(ctx) {
-    const entries = loadInstances(nodeMcpIo(), configPathOf(ctx));
+    const io = nodeMcpIo();
+    const entries = loadInstances(io, mcpStorePath(ctx.paths.home));
     const seen = new Map();
     for (const entry of entries) {
         const key = entry.config.serverName.toLowerCase();
         seen.set(key, (seen.get(key) ?? 0) + 1);
     }
     const duplicates = [...seen.entries()].filter(([, count]) => count > 1).map(([key]) => key);
-    return renderList(entries, duplicates);
-}
-function configPathOf(ctx) {
-    return ctx.paths.profilePatch;
+    const rendered = renderList(entries, duplicates);
+    const migration = detectPatchEntries(io, ctx.paths.profilePatch);
+    const noticeLines = migrationNotice(migration);
+    if (noticeLines.length === 0)
+        return rendered;
+    return {
+        markdown: [rendered.markdown, ...noticeLines].join("\n"),
+        data: rendered.data,
+    };
 }
 function buildAddEntry(inputs) {
     if (!SERVER_NAME_PATTERN.test(inputs.name)) {
@@ -342,28 +466,30 @@ function runAdd(ctx, args, tokens) {
     if (typeof built === "string")
         return { markdown: [heading("/bridge-mcp add"), "", built, ""].join("\n") };
     const io = nodeMcpIo();
-    const configPath = configPathOf(ctx);
-    const existing = loadInstances(io, configPath);
+    const storePath = mcpStorePath(ctx.paths.home);
+    const existing = loadInstances(io, storePath);
     if (findByName(existing, built.config.serverName) !== undefined) {
         return {
             markdown: [
                 heading("/bridge-mcp add"),
                 "",
-                `Refused: serverName "${built.config.serverName}" already exists; DSH fails duplicate names at load.`,
-                "Remove it first with /bridge-mcp remove, or pick another name.",
+                `Refused: serverName "${built.config.serverName}" already exists in ${storePath};`,
+                "DSH fails duplicate names at load. Remove it first with /bridge-mcp remove, or pick another name.",
                 "",
             ].join("\n"),
         };
     }
-    const markdown = [renderPreview("add", configPath, built)];
+    const markdown = [renderPreview("add", storePath, built)];
     if (inputs.dryRun) {
         markdown.push("Dry run: nothing was written.", "");
     }
     else {
-        writeInstances(io, configPath, [...existing, built]);
-        markdown.push(`Wrote 1 instance. Next: /bridge-mcp test ${built.config.serverName}`, "");
+        writeInstances(io, storePath, [...existing, built]);
+        markdown.push(`Wrote 1 instance to the bridge store. Next: /bridge-mcp test ${built.config.serverName}`, "");
+        markdown.push(...pasteInstructions());
     }
-    return { markdown: markdown.join("\n"), data: { written: !inputs.dryRun } };
+    const migrationLines = migrationNotice(detectPatchEntries(io, ctx.paths.profilePatch));
+    return { markdown: markdown.concat(migrationLines).join("\n"), data: { written: !inputs.dryRun, store: storePath } };
 }
 function nearMatches(entries, name) {
     const needle = name.toLowerCase();
@@ -377,8 +503,8 @@ function runRemove(ctx, args, tokens) {
     if (name === undefined)
         return { markdown: usageMarkdown() };
     const io = nodeMcpIo();
-    const configPath = configPathOf(ctx);
-    const existing = loadInstances(io, configPath);
+    const storePath = mcpStorePath(ctx.paths.home);
+    const existing = loadInstances(io, storePath);
     const victim = findByName(existing, name);
     if (victim === undefined) {
         const matches = nearMatches(existing, name);
@@ -387,7 +513,7 @@ function runRemove(ctx, args, tokens) {
             markdown: [heading("/bridge-mcp remove"), "", `Unknown server "${name}".${hint}`, ""].join("\n"),
         };
     }
-    const markdown = [renderPreview("remove", configPath, victim)];
+    const markdown = [renderPreview("remove", storePath, victim)];
     if (args["dry-run"] !== undefined) {
         markdown.push("Dry run: nothing was written.", "");
         return { markdown: markdown.join("\n"), data: { written: false } };
@@ -397,9 +523,11 @@ function runRemove(ctx, args, tokens) {
         markdown.push("Note: disposal unregisters that server's tools and frees the serverName;", "env vars, credential files, and installed packages are never touched.", "");
         return { markdown: markdown.join("\n"), data: { written: false } };
     }
-    writeInstances(io, configPath, existing.filter((entry) => entry.id !== victim.id));
-    markdown.push(`Removed 1 instance from ${configPath}.`, "");
-    return { markdown: markdown.join("\n"), data: { written: true } };
+    writeInstances(io, storePath, existing.filter((entry) => entry.id !== victim.id));
+    markdown.push(`Removed 1 instance from the bridge store: ${storePath}`, "");
+    markdown.push(...pasteInstructions());
+    const migrationLines = migrationNotice(detectPatchEntries(io, ctx.paths.profilePatch));
+    return { markdown: markdown.concat(migrationLines).join("\n"), data: { written: true, store: storePath } };
 }
 /** The checklist emitted by /bridge-mcp test in this iteration. */
 export function handshakeChecklist() {
@@ -613,7 +741,7 @@ export async function runMcp(ctx, args) {
         case "rm":
             return runRemove(ctx, args, tokens.slice(1));
         case "test":
-            return renderTest(loadInstances(nodeMcpIo(), configPathOf(ctx)), tokens.slice(1).filter((token) => !token.startsWith("--")));
+            return renderTest(loadInstances(nodeMcpIo(), mcpStorePath(ctx.paths.home)), tokens.slice(1).filter((token) => !token.startsWith("--")));
         case "import-from":
             return runImportFrom(ctx, tokens.slice(1));
         default:
@@ -637,10 +765,10 @@ function runImportFrom(ctx, tokens) {
     }
     void ctx;
     const io = nodeMcpIo();
-    const home = process.env["HOME"] ?? "";
+    const home = process.env["HOME"] ?? ctx.paths.home;
     const cwd = process.cwd();
     const { plan: probePlan, servers } = readClaudeServers(io, home, cwd);
-    const existing = loadInstances(io, configPathOf(ctx));
+    const existing = loadInstances(io, mcpStorePath(ctx.paths.home));
     const planned = planClaudeImport(servers, existing);
     if (probePlan.error !== undefined) {
         return renderImport({ ...planned, sourcesProbed: probePlan.sourcesProbed, error: probePlan.error });

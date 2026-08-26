@@ -1,11 +1,18 @@
 /**
  * /bridge-mcp - MCP server management (docs/specs/commands/mcp.md).
  *
- * MVP slice, per the task contract:
- *  - list / add / remove / test / import-from subcommands over a ctx-injected
- *    config path (BridgeContext.paths.profilePatch), parsed as JSON for this
- *    iteration (YAML emission is phase-2; the shape mirrors the plugin
- *    instance list documented in packages/mcp/mcp-client/README.md).
+ * MVP slice, per the task contract (docs/reviews/eng-quality-review.md #1):
+ *  - list / add / remove / test / import-from subcommands over the
+ *    bridge-owned JSON store at `$HOME/.dsh-bridge/mcp.json` (same precedent
+ *    as memory.ts; the shape mirrors the plugin instance list documented in
+ *    packages/mcp/mcp-client/README.md).
+ *  - add / remove write ONLY the bridge store. DSH reads MCP servers from the
+ *    user's profile patch (cordis.patch.yml); when a native registration is
+ *    still needed, the exact YAML fragment is emitted as a copy-paste block
+ *    with paste instructions. The user's patch file is never opened for
+ *    writing by this module.
+ *  - Old MCP entries inside the profile patch are detected read-only and
+ *    reported with move instructions (migration notice on list/add/remove).
  *  - import-from claude reads ~/.claude.json `mcpServers` (plus
  *    projects.<cwd>.mcpServers): existence + parse checks only; conversion is
  *    reported as a mapping table, nothing is written to source configs.
@@ -15,7 +22,7 @@
  * Invariants carried from the spec and CHARTER.md:
  *  - Never echo secret values; env/header values are redacted to
  *    {"$env":"NAME"} in JSON and masked in rendered tables.
- *  - Mutating commands print the absolute config path before writing
+ *  - Mutating commands print the absolute store path before writing
  *    (acceptance 34) and honor --dry-run (nothing written).
  *  - Every DSH-behavior claim cites the reference checkout (acceptance 35).
  */
@@ -58,8 +65,12 @@ export interface McpIo {
 }
 /** Node-backed io; the only place real fs calls happen in this module. */
 export declare function nodeMcpIo(): McpIo;
-/** Read instances out of the target config. Absent file means empty config. */
-export declare function loadInstances(io: McpIo, configPath: string): McpServerEntry[];
+/** Directory the bridge owns for MCP state. Never a native DSH path. */
+export declare function mcpStoreDir(home: string): string;
+/** The single bridge-managed MCP store file. */
+export declare function mcpStorePath(home: string): string;
+/** Read instances out of the bridge store. Absent file means empty config. */
+export declare function loadInstances(io: McpIo, storePath: string): McpServerEntry[];
 /** Validate against the parts of the dsh-mcp-client schema this file knows. */
 export declare function validateInstance(entry: McpServerEntry): string | null;
 /** Claude object key -> legal DSH serverName (spec mapping table). */
@@ -71,6 +82,26 @@ export declare function normalizeServerName(rawKey: string, taken: ReadonlySet<s
 export declare function secretShaped(value: unknown): boolean;
 /** Redacted copy of an instance's config for display payloads. */
 export declare function redactConfig(config: McpServerConfig): Record<string, unknown>;
+/** One MCP-shaped instance found in the user's profile patch (read-only). */
+export interface PatchMcpEntry {
+    readonly serverName: string;
+    /** Index within the patch document's top-level array, for user guidance. */
+    readonly index: number;
+}
+/** Result of scanning the profile patch for legacy MCP entries. */
+export interface PatchMigration {
+    readonly patchPath: string;
+    readonly entries: readonly PatchMcpEntry[];
+    readonly error?: string;
+}
+/**
+ * Detect MCP server instances inside the user's cordis.patch.yml without ever
+ * writing to it. The patch is a YAML document; this scan is deliberately
+ * line-based so no YAML parser dependency enters the bridge. A list item is
+ * reported when it carries the mcp-client name or a serverName field. Parse
+ * trouble degrades to an honest note rather than an exception.
+ */
+export declare function detectPatchEntries(io: McpIo, patchPath: string): PatchMigration;
 /** Phases of /mcp test (docs/specs/commands/mcp.md, Test protocol). */
 export interface HandshakePhase {
     readonly phase: string;

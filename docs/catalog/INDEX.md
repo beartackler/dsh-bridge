@@ -70,12 +70,13 @@ Sorted by grade, then by repository stars (snapshot 2026-08-19; see note below).
 | C | dashi-taskboard (`codex-taskboard`) | chuspeeism/dashi-taskboard | 2600 | Shipped runtime contacts nothing beyond loopback plus endpoints you deploy yourself and both scanner criticals are test fixtures, but LAN sharing is unauthenticated on a wildcard bind by default, the launcher drives the Codex desktop app over CDP by design, and the bundled skill steers agents into autonomous board-driven work cycles. | 2026-08-26 | [card](cards/dashi-taskboard.md) |
 | C | dshdesktop (`dsh-desktop`) | dataelement/dsh-desktop | 2500 | A disciplined telemetry-free Electron host whose renderer sandboxing and consent-gated updates check out clean, but it polls a vendor update feed every six hours, its market button installs `dshmarket@latest` at click time, and its optional phone tunnel executes a downloaded cloudflared binary whose pinned checksum is never verified. | 2026-08-26 | [card](cards/dshdesktop.md) |
 | C | Token Monitor (`token-monitor`) | Javis603/token-monitor | 1700 | Every credential it touches (files, env vars, macOS Keychain, Windows Credential Manager, `~/.codex/auth.json`) flows only to the provider that issued it and nothing phones home, but the breadth of secret stores read plus an auth.json write path gives a compromised upstream an outsized blast radius, and hub sync trusts whatever operator you point it at. | 2026-08-26 | [card](cards/token-monitor.md) |
+| C | dsh-vision-toolkit (`@anionex/dsh-vision-toolkit`) | Anionex/dsh-vision-toolkit | 831 | Nothing hostile found: hash-verified vendored runtime, mock-keychain blackhole-proxied headless Chrome, secrets redacted end to end - but the default vision endpoint is the author's own hosted service, npm provenance is unverifiable, and a mirror-first pip path with version-only pins caps it at C. | 2026-08-26 | [card](cards/dsh-vision-toolkit.md) |
+| C | dsh-browser (`@yuxianglin/dsh-bridge-browser`) | Lum1104/dsh-browser | 464 | Content scripts on every page plus an agent driving your logged-in tab, yet all egress stays loopback except a user-clicked update check, password/card fields are masked before leaving the page, actions are origin-gated, and privileged bridge methods refuse non-loopback callers; defaults auto-share page reads and installs float on main. | 2026-08-26 | [card](cards/dsh-browser.md) |
+| C | modsearch (`@liustack/modsearch`) | liustack/modsearch | 283 | Attested, clean code whose business is sending queries and URLs to search providers - exemplary SSRF fence, existence-check-only credential access, loopback-fenced settings route - but Firecrawl keyless mode discloses searches to the cloud by default and the pipeline ceiling applies. | 2026-08-26 | [card](cards/modsearch.md) |
 
-Distribution: 0 A, 11 B, 32 C, 3 D, 0 F across 46 reviewed plugins.
+Distribution: 0 A, 11 B, 35 C, 3 D, 0 F across 49 reviewed plugins.
 
 Star-count note: numbers come from the upstream star snapshot behind [docs/catalog/manifest.json](manifest.json) (checked 2026-08-19). Subpath entries share their parent repo's count, so some rows measure the umbrella repo rather than the individual plugin. Where a card cites a fresher audit-time figure, the card wins.
-
-## Requesting a review
 
 ## Requesting a review
 

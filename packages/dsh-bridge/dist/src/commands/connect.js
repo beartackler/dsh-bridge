@@ -23,6 +23,10 @@
  */
 import { readFileSync } from "node:fs";
 import { claudeCredentialsPath, codexAuthPath, dshEnvPath, geminiOauthCredsPath, maskSecret, opencodeAuthPath, probeEnvVar, probeJsonSource, } from "../lib/paths.js";
+// The apply half lives in its own module (connect-apply.ts) and reads the
+// provider table from here. The import cycle is function-body only: neither
+// module touches the other's bindings at module-evaluation time.
+import { runConnectApply } from "./connect-apply.js";
 /** Environment variables that map one-to-one onto a connector provider. */
 const CONNECTOR_ENV_VARS = Object.freeze([
     "ANTHROPIC_API_KEY",
@@ -295,7 +299,7 @@ export function nextSteps(ctx, provider, rows) {
     const own = rows.filter((matrixRow) => matrixRow.provider === provider);
     const steps = [];
     if (own.some((matrixRow) => matrixRow.status === "found")) {
-        steps.push(`Credential detected. Open ${ctx.paths.profilePatch} and add a route that reads $${profile.envVar}.`);
+        steps.push(`Credential detected. Preview the route: /bridge-connect apply ${provider}`);
         steps.push(`Verify reachability first: /bridge-connect test ${provider}`);
         return steps;
     }
@@ -303,7 +307,7 @@ export function nextSteps(ctx, provider, rows) {
         steps.push(`Token expired. Refresh it with the vendor CLI: ${profile.relogin}`);
     }
     steps.push(`Export a key, then re-run /bridge-connect: export ${profile.envVar}=<your key>`);
-    steps.push(`Routes live in ${ctx.paths.profilePatch} (profile ${ctx.profile}); dsh-bridge never writes the value there.`);
+    steps.push(`Routes live in ${ctx.paths.profilePatch} (profile ${ctx.profile}); dsh-bridge writes an env-var reference there, never the value.`);
     return steps;
 }
 /** Guidance for every provider that currently has no usable credential. */
@@ -329,8 +333,8 @@ export function renderMatrix(ctx, rows) {
         "and never copies one into configuration. Routes reference env vars only.",
         "",
         ...guidance,
-        "Phase 1: detection and reachability only. Interactive route",
-        "configuration ships in a later phase.",
+        "Preview a route with `/bridge-connect apply <provider>`; add `--apply`",
+        "to write it. Routes reference env vars, never key values.",
     ].join("\n");
 }
 /**
@@ -394,6 +398,14 @@ export function parseConnectArgs(args) {
     const verb = (args["_"] ?? "").toLowerCase();
     if (verb === "")
         return { mode: "list" };
+    if (verb === "apply") {
+        const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
+        if (provider === "" || provider.startsWith("-")) {
+            throw new Error(`usage: /connect apply <provider> [--apply] (${SMOKE_PROVIDERS.join(", ")})`);
+        }
+        // `--apply` is the explicit consent; its presence, not its value, decides.
+        return { mode: "apply", provider: provider.toLowerCase(), confirmed: args["apply"] !== undefined };
+    }
     if (verb === "test") {
         const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
         if (provider === "") {
@@ -402,7 +414,7 @@ export function parseConnectArgs(args) {
         return { mode: "test", provider: provider.toLowerCase() };
     }
     if (PROVIDER_PROFILES[verb] === undefined) {
-        throw new Error(`usage: /connect [test <provider>]; phase 1 accepts no other argument (got '${verb}')`);
+        throw new Error(`usage: /connect [test <provider>] [apply <provider> [--apply]]; got '${verb}'`);
     }
     return { mode: "list", provider: verb };
 }
@@ -430,6 +442,9 @@ export async function runConnect(ctx, args) {
             ].join("\n"),
         };
     }
+    if (invocation.mode === "apply") {
+        return runConnectApply(ctx, invocation.provider, invocation.confirmed === true);
+    }
     if (invocation.mode === "test") {
         const provider = invocation.provider;
         const outcome = await smokeProvider(provider);
@@ -450,7 +465,7 @@ export const connectCommand = {
     name: "bridge-connect",
     aliases: [],
     summary: "Detect local provider credentials and report them masked",
-    usage: "[provider] [test <provider>]",
+    usage: "[provider] [test <provider>] [apply <provider> [--apply]]",
     run: runConnect,
 };
 //# sourceMappingURL=connect.js.map

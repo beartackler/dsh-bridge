@@ -51,8 +51,8 @@ export function bridgeCommandTable(ctx) {
         {
             name: "bridge-connect",
             aliases: [],
-            summary: "Detect local provider credentials and report them masked; smoke provider reachability",
-            usage: "[test <provider>]",
+            summary: "Detect local provider credentials, smoke reachability, and apply a model route",
+            usage: "[test <provider>] | apply <provider> [--apply]",
             // Implemented per docs/specs/commands/connect.md (detection + report this phase).
             run: runConnect,
         },
@@ -67,8 +67,8 @@ export function bridgeCommandTable(ctx) {
         {
             name: "bridge-trust",
             aliases: [],
-            summary: "Show plugin trust report cards, scan local code, list reviewed plugins",
-            usage: "<plugin> | scan <directory> | list",
+            summary: "Show plugin trust report cards, scan local code, list reviewed plugins, re-check installed ones",
+            usage: "<plugin> | scan <directory> | list | refresh [<plugin>]",
             // MOUNT(trust): src/commands/trust.ts implements this per docs/specs/commands/trust.md.
             run: runTrust,
         },

@@ -36,6 +36,10 @@ import {
 } from "../lib/paths.js";
 import type { BridgeCommand } from "../lib/registry.js";
 import type { BridgeContext, CommandResult, DetectionRow, DetectionStatus, SourceProbe } from "../lib/types.js";
+// The apply half lives in its own module (connect-apply.ts) and reads the
+// provider table from here. The import cycle is function-body only: neither
+// module touches the other's bindings at module-evaluation time.
+import { runConnectApply } from "./connect-apply.js";
 
 /** Environment variables that map one-to-one onto a connector provider. */
 const CONNECTOR_ENV_VARS = Object.freeze([
@@ -374,7 +378,7 @@ export function nextSteps(
   const steps: string[] = [];
 
   if (own.some((matrixRow) => matrixRow.status === "found")) {
-    steps.push(`Credential detected. Open ${ctx.paths.profilePatch} and add a route that reads $${profile.envVar}.`);
+    steps.push(`Credential detected. Preview the route: /bridge-connect apply ${provider}`);
     steps.push(`Verify reachability first: /bridge-connect test ${provider}`);
     return steps;
   }
@@ -383,7 +387,7 @@ export function nextSteps(
     steps.push(`Token expired. Refresh it with the vendor CLI: ${profile.relogin}`);
   }
   steps.push(`Export a key, then re-run /bridge-connect: export ${profile.envVar}=<your key>`);
-  steps.push(`Routes live in ${ctx.paths.profilePatch} (profile ${ctx.profile}); dsh-bridge never writes the value there.`);
+  steps.push(`Routes live in ${ctx.paths.profilePatch} (profile ${ctx.profile}); dsh-bridge writes an env-var reference there, never the value.`);
   return steps;
 }
 
@@ -420,8 +424,8 @@ export function renderMatrix(ctx: BridgeContext, rows: readonly DetectionRow[]):
     "and never copies one into configuration. Routes reference env vars only.",
     "",
     ...guidance,
-    "Phase 1: detection and reachability only. Interactive route",
-    "configuration ships in a later phase.",
+    "Preview a route with `/bridge-connect apply <provider>`; add `--apply`",
+    "to write it. Routes reference env vars, never key values.",
   ].join("\n");
 }
 
@@ -515,13 +519,24 @@ export function renderSmoke(ctx: BridgeContext, provider: string, outcome: Smoke
 
 /** Parse `/connect ...` args (shared `_`/`rest` convention) into an invocation. */
 export interface ConnectInvocation {
-  readonly mode: "list" | "test";
+  readonly mode: "list" | "test" | "apply";
   readonly provider?: string;
+  /** Explicit consent for the `apply` write (`--apply`). */
+  readonly confirmed?: boolean;
 }
 
 export function parseConnectArgs(args: Readonly<Record<string, string>>): ConnectInvocation {
   const verb = (args["_"] ?? "").toLowerCase();
   if (verb === "") return { mode: "list" };
+
+  if (verb === "apply") {
+    const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
+    if (provider === "" || provider.startsWith("-")) {
+      throw new Error(`usage: /connect apply <provider> [--apply] (${SMOKE_PROVIDERS.join(", ")})`);
+    }
+    // `--apply` is the explicit consent; its presence, not its value, decides.
+    return { mode: "apply", provider: provider.toLowerCase(), confirmed: args["apply"] !== undefined };
+  }
 
   if (verb === "test") {
     const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
@@ -531,7 +546,7 @@ export function parseConnectArgs(args: Readonly<Record<string, string>>): Connec
     return { mode: "test", provider: provider.toLowerCase() };
   }
   if (PROVIDER_PROFILES[verb] === undefined) {
-    throw new Error(`usage: /connect [test <provider>]; phase 1 accepts no other argument (got '${verb}')`);
+    throw new Error(`usage: /connect [test <provider>] [apply <provider> [--apply]]; got '${verb}'`);
   }
   return { mode: "list", provider: verb };
 }
@@ -560,6 +575,10 @@ export async function runConnect(ctx: BridgeContext, args: Readonly<Record<strin
     };
   }
 
+  if (invocation.mode === "apply") {
+    return runConnectApply(ctx, invocation.provider as string, invocation.confirmed === true);
+  }
+
   if (invocation.mode === "test") {
     const provider = invocation.provider as string;
     const outcome = await smokeProvider(provider);
@@ -582,6 +601,6 @@ export const connectCommand: BridgeCommand = {
   name: "bridge-connect",
   aliases: [],
   summary: "Detect local provider credentials and report them masked",
-  usage: "[provider] [test <provider>]",
+  usage: "[provider] [test <provider>] [apply <provider> [--apply]]",
   run: runConnect,
 };

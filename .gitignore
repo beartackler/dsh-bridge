@@ -6,3 +6,6 @@ node_modules/
 !.env.example
 coverage/
 *.log
+
+# Local audit clones - never ship these
+reference/

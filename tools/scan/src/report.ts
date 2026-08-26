@@ -1,0 +1,377 @@
+/**
+ * Report rendering: scan result -> canonical JSON + a markdown trust-card draft.
+ *
+ * Grading is a *pure function* of the finding set (pipeline §S6: "No model touches this
+ * step"). Two properties are non-negotiable:
+ *
+ *  1. Caps are monotone. `final = min(band_from_score, ...caps)`. Nothing can raise a grade.
+ *  2. Output is byte-stable. Same findings => same bytes, so cards diff cleanly in git and
+ *     any third party can recompute the verdict.
+ *
+ * This module implements the *static-scan slice* of the full pipeline. It emits a draft
+ * card explicitly marked as such, because a real grade also requires the behavioral probe
+ * and cross-model review stages that are not implemented here. Overstating what we checked
+ * would violate the charter's "trust over speed" principle.
+ */
+
+import {
+  SEVERITIES,
+  SEVERITY_RANK,
+  type Finding,
+  type RuleFamily,
+  type Severity,
+} from "./rules/index.js";
+
+export const GRADES = ["A", "B", "C", "D", "F"] as const;
+export type Grade = (typeof GRADES)[number];
+/** `?` is the absence of a grade, not a grade. `N/A` means ungradable input. */
+export type Verdict = Grade | "?" | "N/A";
+
+const GRADE_ORDER: readonly Verdict[] = ["A", "B", "C", "D", "F"];
+
+/** From docs/design/trust-report-card.md §2. Letter + icon + word, never color alone. */
+export const GRADE_META: Readonly<Record<Verdict, { icon: string; label: string; verdict: string }>> =
+  Object.freeze({
+    A: { icon: "\u25cf", label: "Verified", verdict: "We read the code. Nothing reaches the network or your credentials." },
+    B: { icon: "\u25d7", label: "Low risk", verdict: "Does what it says. A few normal permissions worth a glance." },
+    C: { icon: "\u25c6", label: "Review needed", verdict: "Some behavior we can't fully explain. Read the findings first." },
+    D: { icon: "\u25b2", label: "Risky", verdict: "This plugin can reach the network and touch sensitive files." },
+    F: { icon: "\u25a0", label: "Do not install", verdict: "We found behavior consistent with malicious code." },
+    "?": { icon: "\u25cb", label: "Unreviewed", verdict: "Nobody has audited this yet." },
+    "N/A": { icon: "\u25cb", label: "Ungradable", verdict: "This source cannot be pinned, so it cannot be graded." },
+  });
+
+export type SeverityCounts = Readonly<Record<Severity, number>>;
+
+export interface ScanStats {
+  readonly filesScanned: number;
+  readonly filesSkipped: number;
+  readonly bytesScanned: number;
+}
+
+export interface ScanResult {
+  readonly target: string;
+  readonly scannerVersion: string;
+  readonly rulesDigest: string;
+  readonly ruleIds: readonly string[];
+  readonly stats: ScanStats;
+  readonly findings: readonly Finding[];
+}
+
+export interface GradeCap {
+  readonly grade: Grade;
+  readonly reason: string;
+}
+
+export interface Grading {
+  readonly grade: Verdict;
+  readonly score: number;
+  readonly counts: SeverityCounts;
+  readonly caps: readonly GradeCap[];
+  readonly gates: readonly string[];
+  readonly familiesPresent: readonly RuleFamily[];
+}
+
+/* ------------------------------------------------------------------------- */
+/* Grading                                                                    */
+/* ------------------------------------------------------------------------- */
+
+/** Deduction per finding. Superlinear by severity: one critical must outweigh many lows. */
+const WEIGHTS: Readonly<Record<Severity, number>> = Object.freeze({
+  info: 0,
+  low: 1,
+  medium: 4,
+  high: 12,
+  critical: 34,
+});
+
+export function countBySeverity(findings: readonly Finding[]): SeverityCounts {
+  const counts: Record<Severity, number> = { info: 0, low: 0, medium: 0, high: 0, critical: 0 };
+  for (const f of findings) counts[f.severity] += 1;
+  return Object.freeze(counts);
+}
+
+function bandFromScore(score: number): Grade {
+  if (score >= 90) return "A";
+  if (score >= 75) return "B";
+  if (score >= 55) return "C";
+  if (score >= 35) return "D";
+  return "F";
+}
+
+/** Returns the worse (later) of two grades. Used to apply monotone caps. */
+function worse(a: Verdict, b: Verdict): Verdict {
+  return GRADE_ORDER.indexOf(a) >= GRADE_ORDER.indexOf(b) ? a : b;
+}
+
+/**
+ * Group findings by the module they occur in, so "CRED + NET in the same module" can be
+ * evaluated. Directory-level grouping is a deliberately conservative stand-in for the
+ * call-graph reachability the full pipeline computes; when reachability is unknown the
+ * spec says treat it as reachable.
+ */
+function familiesByFile(findings: readonly Finding[]): Map<string, Set<RuleFamily>> {
+  const byFile = new Map<string, Set<RuleFamily>>();
+  for (const f of findings) {
+    let set = byFile.get(f.path);
+    if (!set) {
+      set = new Set();
+      byFile.set(f.path, set);
+    }
+    set.add(f.family);
+  }
+  return byFile;
+}
+
+export function grade(findings: readonly Finding[]): Grading {
+  const counts = countBySeverity(findings);
+
+  let deductions = 0;
+  for (const severity of SEVERITIES) deductions += counts[severity] * WEIGHTS[severity];
+  const score = Math.max(0, Math.min(100, 100 - deductions));
+
+  const caps: GradeCap[] = [];
+  const gates: string[] = [];
+
+  const has = (predicate: (f: Finding) => boolean) => findings.some(predicate);
+
+  // --- Hard gates (report-card spec §2). These force a grade; they cannot be out-scored.
+  const credNetFiles = [...familiesByFile(findings).entries()]
+    .filter(([, families]) => families.has("CRED") && families.has("NET"))
+    .map(([file]) => file)
+    .sort();
+  if (credNetFiles.length > 0) {
+    caps.push({
+      grade: "F",
+      reason: `Credential access and network egress co-occur in the same module (${credNetFiles.join(", ")}); reachability unproven, therefore treated as reachable.`,
+    });
+    gates.push("cred-plus-net");
+  }
+
+  if (has((f) => f.id === "OBFU-002")) {
+    caps.push({ grade: "F", reason: "Encoded payload is decoded and executed at runtime." });
+    gates.push("obfuscated-payload-executed");
+  }
+
+  if (has((f) => f.id === "NET-009")) {
+    caps.push({ grade: "F", reason: "Network endpoint is decoded at runtime rather than declared." });
+    gates.push("concealed-egress");
+  }
+
+  if (has((f) => f.id === "HOOK-001")) {
+    caps.push({ grade: "D", reason: "An npm install hook spawns a shell before the user consents." });
+    gates.push("install-hook-shell");
+  }
+
+  if (has((f) => f.family === "EXEC")) {
+    caps.push({ grade: "C", reason: "Shipped code performs dynamic code execution." });
+    gates.push("dynamic-exec-present");
+  }
+
+  // --- Ordinary severity caps.
+  if (counts.critical > 0) caps.push({ grade: "D", reason: "At least one critical finding." });
+  else if (counts.high > 0) caps.push({ grade: "C", reason: "At least one high-severity finding." });
+
+  let verdict: Verdict = bandFromScore(score);
+  for (const cap of caps) verdict = worse(verdict, cap.grade);
+
+  const familiesPresent = [...new Set(findings.map((f) => f.family))].sort() as RuleFamily[];
+
+  return {
+    grade: verdict,
+    score,
+    counts,
+    caps: Object.freeze(caps),
+    gates: Object.freeze([...gates].sort()),
+    familiesPresent: Object.freeze(familiesPresent),
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* JSON output                                                                */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Deterministic JSON with lexicographically sorted keys (RFC 8785 spirit). Plain
+ * JSON.stringify preserves insertion order, which would make the digest depend on
+ * construction order rather than content.
+ */
+export function canonicalJson(value: unknown): string {
+  return `${JSON.stringify(sortKeysDeep(value), null, 2)}\n`;
+}
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function toJsonReport(result: ScanResult, grading: Grading): string {
+  return canonicalJson({
+    schema: "dsh-bridge.scan/v1",
+    scannerVersion: result.scannerVersion,
+    rulesDigest: result.rulesDigest,
+    ruleIds: result.ruleIds,
+    target: result.target,
+    stats: result.stats,
+    grading: {
+      grade: grading.grade,
+      score: grading.score,
+      counts: grading.counts,
+      caps: grading.caps,
+      gates: grading.gates,
+      familiesPresent: grading.familiesPresent,
+    },
+    findings: result.findings,
+  });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Markdown output                                                            */
+/* ------------------------------------------------------------------------- */
+
+const FAMILY_LABEL: Readonly<Record<RuleFamily, string>> = Object.freeze({
+  EXEC: "Dynamic code execution",
+  NET: "Network egress",
+  CRED: "Credential access",
+  FS: "Filesystem writes",
+  HOOK: "Lifecycle hooks",
+  OBFU: "Obfuscation",
+  SUPPLY: "Supply chain",
+  PRIV: "Privacy / telemetry",
+});
+
+function escapeCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+/**
+ * Markdown card draft. Per the design spec the markdown render has **no color**, so the
+ * signal is carried by letter + icon + word label, and evidence is collapsed behind
+ * <details> to preserve the 5-second test.
+ */
+export function toMarkdownReport(result: ScanResult, grading: Grading): string {
+  const meta = GRADE_META[grading.grade];
+  const lines: string[] = [];
+
+  lines.push(`# Trust report card (draft) — \`${result.target}\``);
+  lines.push("");
+  lines.push(`## ${meta.icon} Grade ${grading.grade} — ${meta.label}`);
+  lines.push("");
+  lines.push(`> ${meta.verdict}`);
+  lines.push("");
+  lines.push(
+    "**This is a static-scan draft, not a published verdict.** It reflects stage S3 only. " +
+      "A published card additionally requires the sandboxed behavioral probe and two cross-model " +
+      "adversarial reviews. A grade is evidence-backed opinion with reproducible inputs, never a guarantee.",
+  );
+  lines.push("");
+
+  lines.push("## Provenance");
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  lines.push(`| Scanner | \`${result.scannerVersion}\` |`);
+  lines.push(`| Rule corpus digest | \`${result.rulesDigest}\` |`);
+  lines.push(`| Rules applied | ${result.ruleIds.map((id) => `\`${id}\``).join(", ")} |`);
+  lines.push(`| Files scanned | ${result.stats.filesScanned} (${result.stats.bytesScanned} bytes) |`);
+  lines.push(`| Files skipped | ${result.stats.filesSkipped} |`);
+  lines.push(`| Static score | ${grading.score}/100 |`);
+  lines.push("");
+
+  lines.push("## Findings");
+  lines.push("");
+  lines.push("| Severity | Count |");
+  lines.push("| --- | --- |");
+  for (const severity of [...SEVERITIES].sort((a, b) => SEVERITY_RANK[b] - SEVERITY_RANK[a])) {
+    lines.push(`| ${severity} | ${grading.counts[severity]} |`);
+  }
+  lines.push("");
+
+  if (grading.caps.length > 0) {
+    lines.push("### Grade caps applied");
+    lines.push("");
+    lines.push("Caps only lower a grade; nothing in this pipeline can raise one.");
+    lines.push("");
+    for (const cap of grading.caps) {
+      lines.push(`- **Capped at ${cap.grade}** — ${escapeCell(cap.reason)}`);
+    }
+    lines.push("");
+  }
+
+  if (result.findings.length === 0) {
+    lines.push("No findings from the static rule corpus.");
+    lines.push("");
+    lines.push(
+      "_Absence of findings is not proof of safety: it means these rules matched nothing. " +
+        "See the methodology note above for what was not checked._",
+    );
+    lines.push("");
+  } else {
+    // Group by family; families sorted by their worst severity, then by name.
+    const byFamily = new Map<RuleFamily, Finding[]>();
+    for (const f of result.findings) {
+      const list = byFamily.get(f.family);
+      if (list) list.push(f);
+      else byFamily.set(f.family, [f]);
+    }
+
+    const families = [...byFamily.keys()].sort((a, b) => {
+      const worst = (fam: RuleFamily) =>
+        Math.max(...(byFamily.get(fam) ?? []).map((f) => SEVERITY_RANK[f.severity]));
+      const delta = worst(b) - worst(a);
+      return delta !== 0 ? delta : a < b ? -1 : 1;
+    });
+
+    for (const family of families) {
+      const items = byFamily.get(family) ?? [];
+      lines.push(`### ${family} — ${FAMILY_LABEL[family]} (${items.length})`);
+      lines.push("");
+      lines.push("<details>");
+      lines.push(`<summary>Show ${items.length} finding${items.length === 1 ? "" : "s"} with evidence</summary>`);
+      lines.push("");
+      lines.push("| Severity | Location | Finding | Evidence | Confidence |");
+      lines.push("| --- | --- | --- | --- | --- |");
+      for (const f of items) {
+        lines.push(
+          `| ${f.severity} | \`${escapeCell(f.path)}:${f.line}:${f.col}\` | ${escapeCell(f.message)} | \`${escapeCell(f.excerpt)}\` | ${f.confidence.toFixed(2)} |`,
+        );
+      }
+      lines.push("");
+      lines.push("</details>");
+      lines.push("");
+    }
+
+    lines.push("### Evidence hashes");
+    lines.push("");
+    lines.push("Each hash is `sha256` of the exact matched text, so any reader can verify the citation.");
+    lines.push("");
+    lines.push("<details>");
+    lines.push("<summary>Show hashes</summary>");
+    lines.push("");
+    lines.push("| Location | Finding ID | excerpt_sha256 |");
+    lines.push("| --- | --- | --- |");
+    for (const f of result.findings) {
+      lines.push(`| \`${escapeCell(f.path)}:${f.line}:${f.col}\` | ${f.id} | \`${f.excerptSha256}\` |`);
+    }
+    lines.push("");
+    lines.push("</details>");
+    lines.push("");
+  }
+
+  lines.push("## What this scan did not check");
+  lines.push("");
+  lines.push("- Runtime behavior (timers, delayed beacons, config-triggered paths) — requires stage S4.");
+  lines.push("- Dependency vulnerabilities and SBOM attribution — requires stage S2.");
+  lines.push("- Adversarial model review and false-positive falsification — requires stage S5.");
+  lines.push("- Whether findings are actually reachable from an entry point; unknown reachability is treated as reachable.");
+  lines.push("");
+
+  return `${lines.join("\n")}\n`;
+}

@@ -1,0 +1,105 @@
+/**
+ * CRED — credential and secret access.
+ *
+ * Hard gate from docs/design/trust-report-card.md §2: a credential read plus any network
+ * egress in the same module is an automatic F. This rule's job is to produce the CRED
+ * half of that pair with enough precision that the gate is not tripped by noise.
+ *
+ * The connectors flow in dsh-bridge legitimately *detects* these paths, so this rule
+ * cannot simply treat every mention as malicious. It distinguishes existence checks from
+ * reads, and reads from enumeration.
+ */
+
+import { runDetectors, type Finding, type Rule } from "./types.js";
+
+export const credentialAccessRule: Rule = {
+  id: "credential-access",
+  family: "CRED",
+  severity: "high",
+  version: "2026.08.1",
+  description:
+    "Detects access to credential stores: ~/.claude, ~/.codex, opencode auth.json, ~/.ssh, ~/.aws, .env files, OS keychains, and bulk process.env enumeration.",
+
+  match(content: string, filePath: string): Finding[] {
+    return runDetectors({
+      rule: { id: this.id, family: this.family, severity: this.severity },
+      filePath,
+      content,
+      detectors: [
+        {
+          code: "001",
+          pattern: /['"`][^'"`]*\.(?:claude|codex)(?:\/[^'"`]*)?['"`]|\.(?:claude|codex)\/(?:\.credentials\.json|auth\.json|config\.json)/,
+          message: "References a Claude Code / Codex configuration directory, which holds provider credentials.",
+          confidence: 0.8,
+          note: "dsh-bridge's own connectors flow reads these by design; for third-party plugins it is unexplained.",
+        },
+        {
+          code: "002",
+          pattern: /(?:opencode[^'"`\n]{0,40})?auth\.json/,
+          message: "References an OpenCode auth.json credential file.",
+          confidence: 0.8,
+        },
+        {
+          code: "003",
+          pattern: /['"`][^'"`]*\.ssh(?:\/[^'"`]*)?['"`]|\bid_(?:rsa|ed25519|ecdsa)\b/,
+          message: "References the SSH directory or a private key file.",
+          severity: "critical",
+          confidence: 0.9,
+        },
+        {
+          code: "004",
+          pattern: /['"`][^'"`]*\.aws(?:\/(?:credentials|config))?['"`]|\bAWS_SECRET_ACCESS_KEY\b/,
+          message: "References AWS credentials.",
+          severity: "critical",
+          confidence: 0.9,
+        },
+        {
+          code: "005",
+          pattern: /\b(?:readFileSync|readFile|createReadStream|open)\s*\(\s*[^)]{0,120}\.env\b/,
+          message: "Reads a .env file, which by convention contains secrets in plaintext.",
+          confidence: 0.85,
+        },
+        {
+          code: "006",
+          // Bulk enumeration is qualitatively different from reading one named var:
+          // it is how you harvest every secret at once without naming any of them.
+          pattern: /Object\s*\.\s*(?:keys|entries|values|assign)\s*\(\s*process\s*\.\s*env\s*\)|\{\s*\.\.\.\s*process\s*\.\s*env\s*\}|JSON\s*\.\s*stringify\s*\(\s*process\s*\.\s*env/,
+          message: "Enumerates the entire process environment rather than reading a specific variable.",
+          severity: "critical",
+          confidence: 0.9,
+          note: "Reading one named env var is normal; harvesting all of them is not.",
+        },
+        {
+          code: "007",
+          pattern: /\bprocess\s*\.\s*env\s*\.\s*\w*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|APIKEY|API_KEY)\w*/i,
+          message: "Reads a secret-shaped environment variable.",
+          severity: "medium",
+          confidence: 0.7,
+          note: "Expected for a plugin that talks to its own documented API with the user's own key.",
+        },
+        {
+          code: "008",
+          pattern: /\bsecurity\s+find-(?:generic|internet)-password\b|\blibsecret\b|\bkeytar\b|\bwincred\b|\bCredentialManager\b/,
+          message: "Touches an OS keychain / credential manager.",
+          severity: "critical",
+          confidence: 0.85,
+        },
+        {
+          code: "009",
+          pattern: /['"`][^'"`]*\.(?:netrc|npmrc|pypirc|docker\/config\.json|gitconfig|git-credentials)['"`]/,
+          message: "References a tool credential file (.netrc/.npmrc/docker config/git credentials).",
+          confidence: 0.8,
+        },
+        {
+          code: "010",
+          pattern: /['"`][^'"`]*\.dsh\/(?:profiles|credentials|auth)[^'"`]*['"`]/,
+          message: "References DSH's own profile/credential storage.",
+          confidence: 0.8,
+          note: "Config self-mutation under ~/.dsh/profiles is also an FS finding.",
+        },
+      ],
+    });
+  },
+};
+
+export default credentialAccessRule;

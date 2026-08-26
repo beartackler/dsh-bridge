@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # TODO(verify): @deepseek-ai packages are not yet confirmed on the public
+      # npm registry. If installs fail, swap this step for a checkout of the
+      # deepseek-harness repo and point tsconfig `paths` at its packages, or
+      # publish the peers to a private registry and add `.npmrc` auth.
+      - name: Install dependencies (peers + typescript)
+        run: npm install
+
+      - name: Typecheck and build
+        run: npx tsc --noEmit && npx tsc

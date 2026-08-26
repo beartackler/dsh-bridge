@@ -1,0 +1,15 @@
+# Example Web overlay for local development.
+#
+# Copy to cordis.yml, then from the deepseek-harness checkout root:
+#   pnpm dsh web --patch ./path/to/this/cordis.yml
+#
+# Per docs/user/develop/basic/index.md: the plugin `name` must be an ABSOLUTE
+# path resolvable by the loader; a patch file contributes configuration but
+# does not change the profile directory modules resolve from.
+- insert:
+    - id: starter
+      # TODO(you): replace with the absolute path to your built entry point,
+      # e.g. /absolute/path/to/my-plugin/src/index.ts (or dist/index.js).
+      name: '/absolute/path/to/plugin-starter/src/index.ts'
+      config:
+        greeting: 'Hello from dsh-bridge plugin-starter!'

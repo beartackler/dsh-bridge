@@ -1,0 +1,47 @@
+{
+  "name": "@dsh-bridge/plugin-starter",
+  "version": "0.1.0",
+  "description": "Grade-A starter template for DeepSeek Harness plugins: one example skill and slash command, registered via the Cordis plugin API.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "starter",
+    "template"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-bridge/dsh-bridge.git",
+    "directory": "templates/plugin-starter"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^4.0.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

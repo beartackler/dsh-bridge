@@ -143,6 +143,22 @@ export function scanDirectory(target: string, options: ScanOptions = {}): ScanRe
       size = statSync(absolute).size;
       if (size > maxBytes) {
         filesSkipped += 1;
+        // Never skip silently. A payload hidden inside a padded, oversized file would
+        // otherwise vanish from the report entirely, leaving only an opaque counter.
+        findings.push({
+          id: "SUPPLY-001",
+          ruleId: "scan-limits",
+          family: "SUPPLY",
+          severity: "high",
+          message: `File exceeds the ${maxBytes}-byte scan limit (${size} bytes); its contents were not analyzed.`,
+          path: relPath,
+          line: 1,
+          col: 1,
+          excerpt: "",
+          excerptSha256: "",
+          confidence: 1,
+          note: "Unanalyzed regions cap the grade at C: absence of findings here is absence of evidence, not evidence of absence.",
+        });
         continue;
       }
       content = readFileSync(absolute, "utf8");

@@ -6,8 +6,12 @@
  *    environment, the OpenCode auth map, and the DSH dotenv file. Render the
  *    status table in the spec 6.1 shape. No writes, no network during
  *    detection; interactive route configuration ships in a later phase.
- *  - `/connect test <provider>`: a reachability smoke that is DNS/TCP only.
- *    Phase 1 never transmits credential material anywhere (S1/S4/S5).
+ *  - `/connect test <provider>`: a reachability smoke. One HEAD request to
+ *    the provider's documented base URL with no Authorization header, so
+ *    phase 1 never transmits credential material anywhere (S1/S4/S5).
+ *    Offline machines get a plain "unreachable" verdict, never a stack trace.
+ *  - Next-step guidance per provider: which env var to export and which DSH
+ *    profile file to open. Guidance is static text, derived from no secret.
  *
  * Security invariants honored here (spec section 7):
  *  - S1: only masked display strings ever reach `markdown`/`data`; the mask
@@ -18,9 +22,7 @@
  *  - S13: reads are capped; oversized files report without being parsed.
  */
 
-import { lookup as dnsLookup } from "node:dns/promises";
 import { readFileSync } from "node:fs";
-import { connect as tcpConnect } from "node:net";
 
 import {
   claudeCredentialsPath,
@@ -53,16 +55,44 @@ const ENV_VAR_PROVIDERS: Readonly<Record<string, string>> = Object.freeze({
   OPENROUTER_API_KEY: "openrouter",
 });
 
-/** Providers accepted by `/connect test <provider>` with their smoke targets. */
-const REACHABILITY_TARGETS: Readonly<Record<string, { host: string; port: number; label: string }>> = Object.freeze({
-  anthropic: { host: "api.anthropic.com", port: 443, label: "api.anthropic.com" },
-  openai: { host: "api.openai.com", port: 443, label: "api.openai.com" },
-  google: { host: "generativelanguage.googleapis.com", port: 443, label: "generativelanguage.googleapis.com" },
-  deepseek: { host: "api.deepseek.com", port: 443, label: "api.deepseek.com" },
-  openrouter: { host: "openrouter.ai", port: 443, label: "openrouter.ai" },
+/**
+ * Per-provider connector facts: the base URL the smoke test pings, the env
+ * var a route reads through `!!js process.env.X`, and the vendor CLI that
+ * refreshes an expired OAuth token. Static data; no secret informs it.
+ */
+export interface ProviderProfile {
+  /** Base URL for the unauthenticated HEAD smoke (spec section 5, Smoke). */
+  readonly baseUrl: string;
+  /** Env var a generated route references. Never the value, only the name. */
+  readonly envVar: string;
+  /** Vendor command that re-issues an expired OAuth token (spec section 4). */
+  readonly relogin?: string;
+}
+
+export const PROVIDER_PROFILES: Readonly<Record<string, ProviderProfile>> = Object.freeze({
+  anthropic: {
+    baseUrl: "https://api.anthropic.com/v1/models",
+    envVar: "ANTHROPIC_API_KEY",
+    relogin: "claude /login",
+  },
+  openai: {
+    baseUrl: "https://api.openai.com/v1/models",
+    envVar: "OPENAI_API_KEY",
+    relogin: "codex login",
+  },
+  google: {
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    envVar: "GEMINI_API_KEY",
+    relogin: "gemini auth login",
+  },
+  deepseek: { baseUrl: "https://api.deepseek.com/models", envVar: "DEEPSEEK_API_KEY" },
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1/models", envVar: "OPENROUTER_API_KEY" },
 });
 
-const DEFAULT_TCP_TIMEOUT_MS = 3000;
+/** Providers accepted by `/connect test <provider>`, in display order. */
+export const SMOKE_PROVIDERS: readonly string[] = Object.freeze(Object.keys(PROVIDER_PROFILES));
+
+const DEFAULT_SMOKE_TIMEOUT_MS = 3000;
 
 // ---------------------------------------------------------------------------
 // Masking boundary (connect spec S1)
@@ -165,7 +195,7 @@ function fileRow(provider: string, label: string, inspected: InspectedSource): D
     case "valid-shape":
       if (inspected.verdict?.kind === "oauth") {
         return inspected.verdict.expired
-          ? row(provider, label, "expired", "oauth token expired")
+          ? row(provider, label, "expired", expiredAdvice(provider))
           : row(provider, label, "found", "oauth token present");
       }
       return row(provider, label, "found");
@@ -178,6 +208,15 @@ function fileRow(provider: string, label: string, inspected: InspectedSource): D
     default:
       return row(provider, label, "not found");
   }
+}
+
+/**
+ * Copy for an `expired` row (spec section 4: expired is never selectable, and
+ * the row carries the vendor re-login hint instead of an error).
+ */
+export function expiredAdvice(provider: string): string {
+  const relogin = PROVIDER_PROFILES[provider]?.relogin;
+  return relogin === undefined ? "oauth token expired" : `oauth token expired; re-run: ${relogin}`;
 }
 
 /**
@@ -315,14 +354,62 @@ export function detectCredentials(
 }
 
 // ---------------------------------------------------------------------------
+// Next-step guidance (connect spec 6.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the user should do next for one provider: which env var to export and
+ * which DSH profile file to open. Derived from the provider table and the
+ * matrix statuses only, so no secret can influence, or leak into, the text.
+ */
+export function nextSteps(
+  ctx: BridgeContext,
+  provider: string,
+  rows: readonly DetectionRow[],
+): readonly string[] {
+  const profile = PROVIDER_PROFILES[provider];
+  if (profile === undefined) return [];
+
+  const own = rows.filter((matrixRow) => matrixRow.provider === provider);
+  const steps: string[] = [];
+
+  if (own.some((matrixRow) => matrixRow.status === "found")) {
+    steps.push(`Credential detected. Open ${ctx.paths.profilePatch} and add a route that reads $${profile.envVar}.`);
+    steps.push(`Verify reachability first: /bridge-connect test ${provider}`);
+    return steps;
+  }
+
+  if (own.some((matrixRow) => matrixRow.status === "expired") && profile.relogin !== undefined) {
+    steps.push(`Token expired. Refresh it with the vendor CLI: ${profile.relogin}`);
+  }
+  steps.push(`Export a key, then re-run /bridge-connect: export ${profile.envVar}=<your key>`);
+  steps.push(`Routes live in ${ctx.paths.profilePatch} (profile ${ctx.profile}); dsh-bridge never writes the value there.`);
+  return steps;
+}
+
+/** Guidance for every provider that currently has no usable credential. */
+export function unmetProviders(rows: readonly DetectionRow[]): readonly string[] {
+  return SMOKE_PROVIDERS.filter(
+    (provider) => !rows.some((matrixRow) => matrixRow.provider === provider && matrixRow.status === "found"),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Matrix rendering (connect spec 6.1)
 // ---------------------------------------------------------------------------
 
-function renderMatrix(ctx: BridgeContext, rows: readonly DetectionRow[]): string {
+export function renderMatrix(ctx: BridgeContext, rows: readonly DetectionRow[]): string {
   const table = ctx.output.table(
     ["PROVIDER", "SOURCE", "STATUS", "DETAIL"],
     rows.map((matrixRow) => [matrixRow.provider, matrixRow.source, matrixRow.status, matrixRow.detail]),
   );
+
+  const missing = unmetProviders(rows);
+  const guidance =
+    missing.length === 0
+      ? []
+      : ["Next steps:", "", ...missing.flatMap((provider) => nextSteps(ctx, provider, rows).map((step) => `- ${provider}: ${step}`)), ""];
+
   return [
     "### /connect - connectors",
     "",
@@ -332,95 +419,94 @@ function renderMatrix(ctx: BridgeContext, rows: readonly DetectionRow[]): string
     "Values are masked. dsh-bridge never reads a secret into the transcript,",
     "and never copies one into configuration. Routes reference env vars only.",
     "",
+    ...guidance,
     "Phase 1: detection and reachability only. Interactive route",
     "configuration ships in a later phase.",
   ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
-// Reachability smoke: DNS/TCP only, no credential transmission (phase 1)
+// Smoke test: one unauthenticated HEAD request (connect spec 5, Smoke)
 // ---------------------------------------------------------------------------
 
-export interface ReachabilityStep {
-  readonly step: "dns" | "tcp";
+/**
+ * Minimal fetch seam. `globalThis.fetch` satisfies it; tests inject a double
+ * so no suite ever touches the network.
+ */
+export type FetchLike = (url: string, init: { method: string; signal: AbortSignal }) => Promise<{ status: number }>;
+
+export interface SmokeOutcome {
+  /** True when the endpoint answered at all. 401/403 still prove reachability. */
   readonly ok: boolean;
+  readonly target: string;
+  /** HTTP status when one arrived; absent when the request never completed. */
+  readonly status?: number;
   readonly detail: string;
 }
 
-export interface ReachabilityOutcome {
-  readonly ok: boolean;
-  readonly target: string;
-  readonly steps: readonly ReachabilityStep[];
-}
-
-export interface ReachabilityOptions {
+export interface SmokeOptions {
   readonly timeoutMs?: number;
-  /** Test seam: overrides the provider's documented target. */
-  readonly target?: { host: string; port: number; label: string };
-}
-
-/** Open one TCP connection, measure it, and hang up immediately. */
-function tcpProbe(host: string, port: number, timeoutMs: number): Promise<number> {
-  return new Promise((resolveOpen, refuse) => {
-    const startedAt = Date.now();
-    const socket = tcpConnect(port, host);
-    const timer = setTimeout(() => {
-      socket.destroy();
-      refuse(new Error(`timed out after ${timeoutMs} ms`));
-    }, timeoutMs);
-
-    socket.once("connect", () => {
-      const elapsed = Date.now() - startedAt;
-      clearTimeout(timer);
-      socket.destroy();
-      resolveOpen(elapsed);
-    });
-    socket.once("error", (error: Error) => {
-      clearTimeout(timer);
-      socket.destroy();
-      refuse(error);
-    });
-  });
+  /** Test seam: substitute the HTTP client. Defaults to global fetch. */
+  readonly fetchImpl?: FetchLike;
 }
 
 /**
- * Resolve the provider host, then prove a TCP connection opens. Nothing is
- * written to the socket, so no credential material can be transmitted.
+ * HEAD the provider base URL with no Authorization header, so the request
+ * carries nothing secret by construction. Any HTTP answer (including 401)
+ * counts as reachable: the point is that the endpoint is routable from here.
+ * Offline machines resolve to a plain unreachable verdict, never a throw.
  */
-export async function testProviderReachability(provider: string, options: ReachabilityOptions = {}): Promise<ReachabilityOutcome> {
-  const target = options.target ?? REACHABILITY_TARGETS[provider];
-  if (target === undefined) {
-    throw new Error(`unknown provider '${provider}'`);
-  }
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TCP_TIMEOUT_MS;
-  const steps: ReachabilityStep[] = [];
-
-  try {
-    const resolved = await dnsLookup(target.host);
-    steps.push({ step: "dns", ok: true, detail: `resolved ${resolved.address}` });
-  } catch (error) {
-    steps.push({ step: "dns", ok: false, detail: `lookup failed (${(error as NodeJS.ErrnoException).code ?? "error"})` });
-    return { ok: false, target: target.label, steps };
+export async function smokeProvider(provider: string, options: SmokeOptions = {}): Promise<SmokeOutcome> {
+  const profile = PROVIDER_PROFILES[provider];
+  if (profile === undefined) {
+    throw new Error(`unknown provider '${provider}' (expected one of ${SMOKE_PROVIDERS.join(", ")})`);
   }
 
+  const doFetch = options.fetchImpl ?? (globalThis.fetch as unknown as FetchLike | undefined);
+  if (doFetch === undefined) {
+    return { ok: false, target: profile.baseUrl, detail: "no HTTP client available in this runtime" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_SMOKE_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
-    const elapsed = await tcpProbe(target.host, target.port, timeoutMs);
-    steps.push({ step: "tcp", ok: true, detail: `open in ${elapsed} ms` });
-    return { ok: true, target: target.label, steps };
+    const response = await doFetch(profile.baseUrl, { method: "HEAD", signal: controller.signal });
+    return {
+      ok: true,
+      target: profile.baseUrl,
+      status: response.status,
+      detail: `HTTP ${response.status} in ${Date.now() - startedAt} ms (no auth header sent)`,
+    };
   } catch (error) {
-    steps.push({ step: "tcp", ok: false, detail: `refused or filtered (${(error as Error).message})` });
-    return { ok: false, target: target.label, steps };
+    // Offline, DNS failure, proxy block, timeout: all the same user-facing fact.
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    return {
+      ok: false,
+      target: profile.baseUrl,
+      detail: `unreachable${code === undefined ? "" : ` (${code})`}; check network access or a proxy`,
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-function renderReachability(ctx: BridgeContext, provider: string, outcome: ReachabilityOutcome): string {
+export function renderSmoke(ctx: BridgeContext, provider: string, outcome: SmokeOutcome): string {
   const fields: readonly (readonly [string, string])[] = [
     ["endpoint", outcome.target],
-    ...outcome.steps.map((step): readonly [string, string] => [step.step, `${step.ok ? "ok" : "fail"} - ${step.detail}`]),
-    ["scope", "DNS/TCP only; no credentials transmitted"],
+    ["request", "HEAD, no Authorization header"],
+    ["result", outcome.detail],
     ["verdict", outcome.ok ? "reachable" : "unreachable"],
   ];
-  return [`### /connect test - ${provider}`, "", ctx.output.card(`Reachability - ${provider}`, fields)].join("\n");
+  const followUp = outcome.ok
+    ? []
+    : ["", "Detection still works offline: run /bridge-connect to see the matrix."];
+  return [
+    `### /connect test - ${provider}`,
+    "",
+    ctx.output.card(`Reachability - ${provider}`, fields),
+    ...followUp,
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -434,35 +520,37 @@ export interface ConnectInvocation {
 }
 
 export function parseConnectArgs(args: Readonly<Record<string, string>>): ConnectInvocation {
-  const verb = args["_"] ?? "";
+  const verb = (args["_"] ?? "").toLowerCase();
   if (verb === "") return { mode: "list" };
 
   if (verb === "test") {
     const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
     if (provider === "") {
-      throw new Error("usage: /connect test <provider> (anthropic, openai, google, deepseek, openrouter)");
+      throw new Error(`usage: /connect test <provider> (${SMOKE_PROVIDERS.join(", ")})`);
     }
     return { mode: "test", provider: provider.toLowerCase() };
   }
-  if (!REACHABILITY_TARGETS[verb]) {
+  if (PROVIDER_PROFILES[verb] === undefined) {
     throw new Error(`usage: /connect [test <provider>]; phase 1 accepts no other argument (got '${verb}')`);
   }
   return { mode: "list", provider: verb };
 }
 
-/** Phase-1 runner: detection matrix by default; `test <provider>` for reachability. */
+/** Phase-1 runner: detection matrix by default; `test <provider>` for the smoke. */
 export async function runConnect(ctx: BridgeContext, args: Readonly<Record<string, string>>): Promise<CommandResult> {
   const invocation = parseConnectArgs(args);
 
   if (invocation.mode === "test") {
-    const outcome = await testProviderReachability(invocation.provider as string);
+    const provider = invocation.provider as string;
+    const outcome = await smokeProvider(provider);
     return {
-      markdown: renderReachability(ctx, invocation.provider as string, outcome),
-      data: { kind: "connect.reachability", ok: outcome.ok, target: outcome.target, steps: outcome.steps },
+      markdown: renderSmoke(ctx, provider, outcome),
+      data: { kind: "connect.smoke", provider, ok: outcome.ok, target: outcome.target, status: outcome.status },
     };
   }
 
-  const rows = detectCredentials(ctx);
+  const all = detectCredentials(ctx);
+  const rows = invocation.provider === undefined ? all : all.filter((matrixRow) => matrixRow.provider === invocation.provider);
   return {
     markdown: renderMatrix(ctx, rows),
     data: { kind: "connect.matrix", profile: ctx.profile, rows },
@@ -474,6 +562,6 @@ export const connectCommand: BridgeCommand = {
   name: "bridge-connect",
   aliases: [],
   summary: "Detect local provider credentials and report them masked",
-  usage: "[test <provider>]",
+  usage: "[provider] [test <provider>]",
   run: runConnect,
 };

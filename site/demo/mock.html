@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dsh-bridge — /connect detection matrix and trust card</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #12181f;
+    --chrome: #161c24;
+    --border: #232c38;
+    --fg: #d5dde7;
+    --dim: #7c8899;
+    --accent: #6ea8fe;
+    --ok: #7ee2a8;
+    --warn: #f2c46b;
+    --bad: #f08a8a;
+    --shadow: 0 24px 60px rgba(0,0,0,.55);
+  }
+  html[data-theme="light"] {
+    --bg: #eef1f5;
+    --panel: #ffffff;
+    --chrome: #f4f6f9;
+    --border: #d8dee6;
+    --fg: #1c2430;
+    --dim: #62707f;
+    --accent: #1f5fd0;
+    --ok: #157a4a;
+    --warn: #8a6300;
+    --bad: #b02a2a;
+    --shadow: 0 20px 44px rgba(20,30,45,.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1200px; height: 750px;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "SF Mono", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stage { width: 1120px; }
+  .window {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--chrome);
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--border); }
+  .title {
+    margin-left: 8px; font-size: 12px; letter-spacing: .04em;
+    color: var(--dim);
+  }
+  pre {
+    margin: 0;
+    padding: 22px 26px 26px;
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre;
+    tab-size: 4;
+    color: var(--fg);
+  }
+  .caption {
+    margin: 0 0 12px 2px;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .d { color: var(--dim); }
+  .a { color: var(--accent); }
+  .g { color: var(--ok); }
+  .w { color: var(--warn); }
+  .r { color: var(--bad); }
+  .b { font-weight: 600; }
+
+  .card {
+    margin: 4px 26px 0;
+    font-size: 13px;
+    line-height: 1.55;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .card-row { padding: 12px 18px; }
+  .card-row + .card-row { border-top: 1px solid var(--border); }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    background: var(--chrome);
+  }
+  .kv { display: grid; grid-template-columns: 112px 1fr; row-gap: 3px; }
+  .kv2 { display: grid; grid-template-columns: 18px 96px 1fr; row-gap: 3px; }
+  .frame { display: none; }
+  .frame.active { display: block; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- Frame 1: detecting -->
+  <section class="frame" id="frame-1">
+    <p class="caption">dsh-bridge · /connect</p>
+    <div class="window">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">dsh — deepseek harness</span></div>
+<pre>  <span class="a b">/connect</span> <span class="d">· connectors</span>
+
+  Scanning standard credential locations…
+
+  <span class="d">PROVIDER    SOURCE                              STATUS      DETAIL</span>
+  <span class="d">─────────────────────────────────────────────────────────────────────────────</span>
+  anthropic   ~/.claude/.credentials.json         <span class="g">found</span>       oauth · expires in 4d
+  anthropic   $ANTHROPIC_API_KEY                  <span class="d">checking…</span>
+  openai      ~/.codex/auth.json                  <span class="d">checking…</span>
+  openai      $OPENAI_API_KEY                     <span class="d">checking…</span>
+  google      ~/.gemini/oauth_creds.json          <span class="d">checking…</span>
+  google      $GEMINI_API_KEY                     <span class="d">checking…</span>
+  deepseek    $DEEPSEEK_API_KEY                   <span class="d">checking…</span>
+  anthropic   opencode auth.json                  <span class="d">checking…</span>
+  <span class="d">─────────────────────────────────────────────────────────────────────────────</span>
+  <span class="d">profile: web        configured routes: none</span>
+
+  <span class="d">Values are masked. dsh-bridge never reads a secret into the transcript,</span>
+  <span class="d">and never copies one into configuration — routes reference env vars only.</span>
+
+  <span class="d">13 locations · read-only · no network</span>
+</pre>
+    </div>
+  </section>
+
+  <!-- Frame 2: results -->
+  <section class="frame" id="frame-2">
+    <p class="caption">dsh-bridge · /connect</p>
+    <div class="window">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">dsh — deepseek harness</span></div>
+<pre>  <span class="a b">/connect</span> <span class="d">· connectors</span>
+
+  Scanning standard credential locations…                              <span class="g">done in 118ms</span>
+
+  <span class="d">PROVIDER    SOURCE                              STATUS      DETAIL</span>
+  <span class="d">─────────────────────────────────────────────────────────────────────────────</span>
+  anthropic   ~/.claude/.credentials.json         <span class="g">found</span>       oauth · expires in 4d
+  anthropic   $ANTHROPIC_API_KEY                  <span class="d">not found</span>   <span class="d">—</span>
+  openai      ~/.codex/auth.json                  <span class="g">found</span>       oauth · expires in 22h
+  openai      $OPENAI_API_KEY                     <span class="g">found</span>       sk-proj-…7Qa
+  google      ~/.gemini/oauth_creds.json          <span class="w">expired</span>     re-run: gemini auth login
+  google      $GEMINI_API_KEY                     <span class="d">not found</span>   <span class="d">—</span>
+  deepseek    $DEEPSEEK_API_KEY                   <span class="g">found</span>       sk-…4f19
+  anthropic   opencode auth.json                  <span class="g">found</span>       key · sk-ant-…9Kd  <span class="d">(alternate)</span>
+  <span class="d">─────────────────────────────────────────────────────────────────────────────</span>
+  <span class="d">profile: web        configured routes: none</span>
+
+  <span class="d">Values are masked. dsh-bridge never reads a secret into the transcript,</span>
+  <span class="d">and never copies one into configuration — routes reference env vars only.</span>
+
+  Select a provider to connect:
+  <span class="a">❯ anthropic   via ~/.claude/.credentials.json   <span class="d">(recommended)</span></span>
+    openai      via $OPENAI_API_KEY
+    deepseek    via $DEEPSEEK_API_KEY
+    custom      OpenAI-compatible endpoint…
+    cancel
+</pre>
+    </div>
+  </section>
+
+  <!-- Frame 3: trust card -->
+  <section class="frame" id="frame-3">
+    <p class="caption">dsh-bridge · trust report card</p>
+    <div class="window">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">dsh — deepseek harness</span></div>
+<pre style="padding-bottom:14px">  <span class="a b">/plugins</span> <span class="d">· trust report card</span></pre>
+      <div class="card">
+        <div class="card-row card-head">
+          <span class="b">@liustack/modlens</span>
+          <span><span class="d">Grade</span> &nbsp;<span class="g b">B</span></span>
+        </div>
+        <div class="card-row kv">
+          <span class="d">subject</span><span>github:liustack/modlens @ 00f3658 <span class="d">(tag v3.25.0)</span></span>
+          <span class="d">integrity</span><span>sha512-ul6hysW7H0ljFqSRAz/Q07216wJGs8AFLULKP83yx4JE…</span>
+          <span class="d">provenance</span><span>npm attestation present · SLSA · gitHead matches commit</span>
+          <span class="d">license</span><span>MIT <span class="d">(LICENSE:1-3)</span></span>
+          <span class="d">audited</span><span>2026-08-25 · scanner 0.1.0 + full manual source review</span>
+        </div>
+        <div class="card-row kv2">
+          <span class="g">✓</span><span>network</span><span>vendor vision endpoints only <span class="d">geminiApi.ts:18, anthropicApi.ts:17</span></span>
+          <span class="g">✓</span><span>exec</span><span>no eval / new Function / vm <span class="d">grep across src, dsh, skills</span></span>
+          <span class="g">✓</span><span>telemetry</span><span>none <span class="d">(zero hits across src, dsh, skills, scripts, evals)</span></span>
+          <span class="w">!</span><span>creds</span><span>existence checks + opt-in reuse <span class="d">auto/routes.ts:406, 473-501</span></span>
+          <span class="w">!</span><span>fs writes</span><span>$TMPDIR/modlens-* and ~/.modlens <span class="d">0600 in 0700 · config.ts:398</span></span>
+        </div>
+        <div class="card-row kv">
+          <span class="d">not&nbsp;checked</span><span class="d">shipped bundle vs src (not rebuilt) · no behavioral probe ·<br>third-party CLI behavior · single-reviewer pass</span>
+        </div>
+      </div>
+<pre style="padding-top:18px">  <span class="d">Safe with documented behavior: every network destination is a user-configured or</span>
+  <span class="d">vendor-default vision endpoint plus the plugin's own loopback routes.</span>
+
+  Verify:  <span class="a">/plugins verify @liustack/modlens</span>   re-run the scanner against the pin
+</pre>
+    </div>
+  </section>
+
+</div>
+<script>
+  var p = new URLSearchParams(location.search);
+  var theme = p.get("theme") === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", theme);
+  var frame = p.get("frame") || "2";
+  var el = document.getElementById("frame-" + frame) || document.getElementById("frame-2");
+  el.classList.add("active");
+</script>
+</body>
+</html>

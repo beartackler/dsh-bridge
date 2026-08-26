@@ -36,7 +36,21 @@ export function shannonEntropy(input: string): number {
 }
 
 const MIN_BLOB_LENGTH = 120;
+/**
+ * Second tier. Split-blob gaming works by keeping every literal just under the primary
+ * gate, so a shorter run still leaves evidence — at low severity, which is what keeps
+ * the inlined-SVG false-positive problem from coming back.
+ */
+const MIN_SHORT_BLOB_LENGTH = 48;
 const ENTROPY_THRESHOLD = 4.2;
+
+/** Decode calls, in the shapes that actually appear in staged loaders. */
+const DECODE_CALL =
+  /\b(?:atob|unescape|decodeURIComponent)\s*\(|Buffer\s*\.\s*from\s*\([^)]{0,120}?['"`](?:base64|hex)['"`]\s*\)|String\s*\.\s*fromCharCode\s*\(/;
+
+/** Any signal that this module can execute code or reach the network. */
+const EXEC_OR_NET_CAPABLE =
+  /(?<![.\w$])eval\s*\(|\bnew\s+Function\s*\(|\(\s*0\s*,\s*eval\s*\)|\bvm\s*\.\s*run|\bchild_process\b|(?<![.\w$])fetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bhttps?\s*\.\s*request\s*\(|https?:\/\/|\bset(?:Timeout|Interval)\s*\(|\baxios\b|\bnode-fetch\b|\bundici\b/;
 
 /**
  * Long, high-entropy string literals: the payload half of a staged loader.
@@ -47,29 +61,34 @@ function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule): 
   const haystack = maskComments(content);
   const index = new LineIndex(content);
   const findings: Finding[] = [];
-  const literal = /(['"`])((?:[A-Za-z0-9+/=_-]|\\.){120,}?)\1/g;
+  const literal = new RegExp(`(['"\`])((?:[A-Za-z0-9+/=_-]|\\\\.){${MIN_SHORT_BLOB_LENGTH},}?)\\1`, "g");
+  // A short blob only counts as evidence when the module can do something with it.
+  const capable = EXEC_OR_NET_CAPABLE.test(haystack) || DECODE_CALL.test(haystack);
 
   let match: RegExpExecArray | null = literal.exec(haystack);
   while (match !== null) {
     const body = match[2];
-    if (body.length >= MIN_BLOB_LENGTH) {
+    const long = body.length >= MIN_BLOB_LENGTH;
+    if (long || capable) {
       const entropy = shannonEntropy(body);
       if (entropy >= ENTROPY_THRESHOLD) {
         const { line, col } = index.locate(match.index);
         const raw = content.slice(match.index, match.index + match[0].length);
         findings.push({
-          id: "OBFU-001",
+          id: long ? "OBFU-001" : "OBFU-012",
           ruleId: rule.id,
           family: rule.family,
-          severity: "medium",
+          severity: long ? "medium" : "low",
           message: `High-entropy string literal (${entropy.toFixed(2)} bits/char over ${body.length} chars) consistent with an encoded payload.`,
           path: filePath,
           line,
           col,
           excerpt: makeExcerpt(raw),
           excerptSha256: sha256(raw),
-          confidence: 0.6,
-          note: "Known false positives: inlined fonts/images, WASM, test fixtures, integrity hashes. Confirm whether the value is ever decoded and executed.",
+          confidence: long ? 0.6 : 0.45,
+          note: long
+            ? "Known false positives: inlined fonts/images, WASM, test fixtures, integrity hashes. Confirm whether the value is ever decoded and executed."
+            : "Second-tier blob: shorter than the primary gate but inside a module that decodes or executes. Splitting a payload across short literals is a known way to stay under the length threshold.",
         });
       }
     }
@@ -78,13 +97,52 @@ function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule): 
   return findings;
 }
 
+/**
+ * OBFU-010 — decode co-present with execution or egress, without requiring adjacency.
+ *
+ * OBFU-002 only sees `eval(atob(...))` written as one expression. Routing the decoded
+ * string through a variable splits the chain across statements and makes both halves
+ * invisible. Adjacency is not a security property, so this detector drops it: a base64
+ * decode inside a module that can execute code or reach the network is the compounding
+ * signal the OBFU family exists to surface. One finding per file, cited at the decode.
+ */
+function detectStagedDecode(content: string, filePath: string, rule: Rule): Finding[] {
+  const haystack = maskComments(content);
+  if (!EXEC_OR_NET_CAPABLE.test(haystack)) return [];
+
+  const decode = new RegExp(DECODE_CALL.source, "g");
+  const match = decode.exec(haystack);
+  if (match === null) return [];
+
+  const index = new LineIndex(content);
+  const { line, col } = index.locate(match.index);
+  const raw = content.slice(match.index, match.index + match[0].length);
+  return [
+    {
+      id: "OBFU-010",
+      ruleId: rule.id,
+      family: rule.family,
+      severity: "medium",
+      message:
+        "Runtime decode call inside a module that also executes code or performs network I/O; the decoded value may never appear literally in the source.",
+      path: filePath,
+      line,
+      col,
+      excerpt: makeExcerpt(index.lineText(content, line)),
+      excerptSha256: sha256(raw),
+      confidence: 0.6,
+      note: "Adjacency is not required: routing a decoded string through a variable is how the eval(atob(...)) chain is normally split. Benign shape: decoding user data that is never executed or sent.",
+    },
+  ];
+}
+
 export const obfuscationRule: Rule = {
   id: "obfuscation",
   family: "OBFU",
   severity: "medium",
-  version: "2026.08.1",
+  version: "2026.08.2",
   description:
-    "Detects concealment signals: high-entropy encoded blobs, base64/hex decode-then-execute chains, obfuscator.io string-array rotation, hex identifiers, zero-width characters, homoglyphs, and minified output with no sourcemap.",
+    "Detects concealment signals: high-entropy encoded blobs, base64/hex decode-then-execute chains (adjacent or staged through variables), obfuscator.io string-array rotation, hex identifiers, zero-width characters, homoglyphs, and minified output with no sourcemap.",
 
   match(content: string, filePath: string): Finding[] {
     const regexFindings = runDetectors({
@@ -127,11 +185,24 @@ export const obfuscationRule: Rule = {
         },
         {
           code: "006",
-          pattern: /[\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\ufeff]/,
+          pattern: /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/,
           message: "Zero-width or bidirectional control character in source; can hide code from human review (Trojan Source).",
           severity: "high",
           confidence: 0.9,
           note: "Bidi overrides can make reviewed code differ from compiled code (CVE-2021-42574).",
+          // A UTF-8 BOM at offset 0 is an editor artifact, not concealment: it cannot hide
+          // anything because there is nothing before it.
+          refine: (match) => !(match.index === 0 && match[0] === "\ufeff"),
+        },
+        {
+          code: "011",
+          // U+2028/U+2029 are line separators, not bidi overrides. They appear in generated
+          // multiline strings, so they are evidence at low severity rather than high.
+          pattern: /[\u2028\u2029]/,
+          message: "Unicode line separator (U+2028/U+2029) in source; it terminates a line for the parser but not for most editors.",
+          severity: "low",
+          confidence: 0.6,
+          note: "Common in generated multiline string data. Distinct from the bidi-override case, which stays high.",
         },
         {
           code: "007",
@@ -158,7 +229,11 @@ export const obfuscationRule: Rule = {
       ],
     });
 
-    return sortFindings([...regexFindings, ...detectHighEntropyBlobs(content, filePath, this)]);
+    return sortFindings([
+      ...regexFindings,
+      ...detectStagedDecode(content, filePath, this),
+      ...detectHighEntropyBlobs(content, filePath, this),
+    ]);
   },
 };
 

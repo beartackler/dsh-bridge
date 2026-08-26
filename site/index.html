@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-bridge - verified plugin catalog</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <p class="brand"><a href="index.html">dsh-bridge</a></p>
+    <p class="tagline">Verified plugin catalog for DeepSeek Harness</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>DeepSeek Harness plugins you can verify before you install.</h1>
+    <p>
+      dsh-bridge is a DeepSeek Harness plugin for people arriving from Claude Code, Codex CLI,
+      OpenCode, or Jcode: familiar slash commands, guided provider setup, and a curated plugin
+      catalog. Every community plugin in that catalog passes an adversarial security review against
+      a pinned commit before we recommend it, and each verdict ships as a trust report card citing
+      file-and-line evidence you can re-run yourself.
+    </p>
+    <p id="meta" class="meta" hidden></p>
+  </section>
+
+  <section aria-label="Catalog controls" class="controls">
+    <input type="search" id="search" placeholder="Search name, repo, verdict..." autocomplete="off">
+    <div class="filters">
+      <div class="filter-group" role="group" aria-label="Filter by grade" id="grade-filters"></div>
+      <div class="filter-group" role="group" aria-label="Filter by category" id="category-filters"></div>
+    </div>
+  </section>
+
+  <p id="count" class="meta" role="status"></p>
+
+  <table class="catalog" id="catalog-table">
+    <thead>
+      <tr><th scope="col">Grade</th><th scope="col">Plugin</th><th scope="col">Repo</th><th scope="col">Stars</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <p id="empty" class="meta" hidden>No plugins match the current filters.</p>
+
+  <section class="notes">
+    <h2>About these grades</h2>
+    <dl class="grade-legend">
+      <dt>A</dt><dd>Verified-clean. No high or critical findings; recommended by default in /bridge:install.</dd>
+      <dt>B</dt><dd>Safe with documented behavior. Any egress is documented and user-visible.</dd>
+      <dt>C</dt><dd>Use with awareness. Real capabilities or gaps to know about first. Also the ceiling when the pipeline could not fully examine a plugin.</dd>
+      <dt>D</dt><dd>Risky. Undocumented egress, obfuscation signals, or a disputed high finding. Install only if you understand the named risk.</dd>
+      <dt>F</dt><dd>Do not install. Demonstrated hostility.</dd>
+    </dl>
+    <p>
+      A grade is an evidence-backed opinion over one pinned commit as of its verified date. It is
+      not a safety guarantee and says nothing about any other version. Full methodology lives in
+      <a href="https://github.com/beartackler/dsh-bridge/blob/main/docs/trust/pipeline-architecture.md">docs/trust/pipeline-architecture.md</a>.
+      This site is static data from the repository; nothing here updates automatically.
+    </p>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Generated from <code>docs/catalog/INDEX.md</code> and <code>docs/catalog/manifest.json</code>.</p>
+    <p><a href="https://github.com/beartackler/dsh-bridge">dsh-bridge on GitHub</a>. Not affiliated with DeepSeek.</p>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

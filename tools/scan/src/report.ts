@@ -123,6 +123,19 @@ function familiesByFile(findings: readonly Finding[]): Map<string, Set<RuleFamil
   return byFile;
 }
 
+/**
+ * Package root of a path: the directory holding the nearest package.json in a normal
+ * layout. Approximated as the top-level directory, which is the unit an author would
+ * split files across to dilute a per-file gate.
+ */
+function packageOf(path: string): string {
+  const slash = path.indexOf("/");
+  return slash < 0 ? "." : path.slice(0, slash);
+}
+
+/** Distinct files carrying the same family before the density cap applies. */
+const DENSITY_FILE_THRESHOLD = 3;
+
 export function grade(findings: readonly Finding[]): Grading {
   const counts = countBySeverity(findings);
 
@@ -136,7 +149,8 @@ export function grade(findings: readonly Finding[]): Grading {
   const has = (predicate: (f: Finding) => boolean) => findings.some(predicate);
 
   // --- Hard gates (report-card spec §2). These force a grade; they cannot be out-scored.
-  const credNetFiles = [...familiesByFile(findings).entries()]
+  const byFile = familiesByFile(findings);
+  const credNetFiles = [...byFile.entries()]
     .filter(([, families]) => families.has("CRED") && families.has("NET"))
     .map(([file]) => file)
     .sort();
@@ -148,6 +162,57 @@ export function grade(findings: readonly Finding[]): Grading {
     gates.push("cred-plus-net");
   }
 
+  // Same-package split: reads in one module, sends from another. The per-file gate keys
+  // on co-occurrence, so splitting across modules turned a fail-closed rule into a
+  // fail-open one. Reachability across an intra-package boundary is unknown, and the
+  // spec says unknown reachability is treated as reachable — so the gate follows the
+  // package, not the file, once any concealment signal is also present.
+  const packagesWith = (family: RuleFamily): Set<string> =>
+    new Set(findings.filter((f) => f.family === family).map((f) => packageOf(f.path)));
+  if (credNetFiles.length === 0) {
+    const credPkgs = packagesWith("CRED");
+    const netPkgs = packagesWith("NET");
+    const shared = [...credPkgs].filter((pkg) => netPkgs.has(pkg)).sort();
+    const concealed = has((f) => f.family === "OBFU");
+    if (shared.length > 0 && concealed) {
+      caps.push({
+        grade: "F",
+        reason: `Credential access and network egress occur in the same package (${shared.join(", ")}) alongside a concealment signal; splitting them across modules does not make the flow unreachable.`,
+      });
+      gates.push("cred-plus-net-split");
+    } else if (shared.length > 0) {
+      caps.push({
+        grade: "D",
+        reason: `Credential access and network egress occur in the same package (${shared.join(", ")}) but in different modules; the flow between them is unproven in either direction.`,
+      });
+      gates.push("cred-plus-net-package");
+    }
+  }
+
+  // Density: deductions are per finding, so fragmenting risky behavior across many small
+  // files diluted every per-severity count. One family spread over several files is a
+  // structural signal in itself, not a set of unrelated small hits.
+  const filesPerFamily = new Map<RuleFamily, Set<string>>();
+  for (const f of findings) {
+    let files = filesPerFamily.get(f.family);
+    if (!files) {
+      files = new Set();
+      filesPerFamily.set(f.family, files);
+    }
+    files.add(f.path);
+  }
+  const spreadFamilies = [...filesPerFamily.entries()]
+    .filter(([family, files]) => files.size >= DENSITY_FILE_THRESHOLD && family !== "SUPPLY")
+    .map(([family]) => family)
+    .sort();
+  if (spreadFamilies.length > 0) {
+    caps.push({
+      grade: "C",
+      reason: `The same behavior family appears in ${DENSITY_FILE_THRESHOLD} or more separate files (${spreadFamilies.join(", ")}); spreading findings thin does not reduce the capability.`,
+    });
+    gates.push("finding-density");
+  }
+
   if (has((f) => f.id === "OBFU-002")) {
     caps.push({ grade: "F", reason: "Encoded payload is decoded and executed at runtime." });
     gates.push("obfuscated-payload-executed");
@@ -156,6 +221,12 @@ export function grade(findings: readonly Finding[]): Grading {
   if (has((f) => f.id === "NET-009")) {
     caps.push({ grade: "F", reason: "Network endpoint is decoded at runtime rather than declared." });
     gates.push("concealed-egress");
+  }
+
+  // Unanalyzed content: the scanner cannot vouch for what it did not read.
+  if (has((f) => f.id === "SUPPLY-001")) {
+    caps.push({ grade: "C", reason: "At least one file exceeded the scan limit and was not analyzed." });
+    gates.push("unanalyzed-content");
   }
 
   if (has((f) => f.id === "HOOK-001")) {

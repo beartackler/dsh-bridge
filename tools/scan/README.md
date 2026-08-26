@@ -74,11 +74,39 @@ between calls.
 
 | Rule | Family | Base severity | Detects |
 |---|---|---|---|
-| `dynamic-eval` | `EXEC` | high | `eval`, `new Function`, `vm.*`, `child_process`, `process.binding`, dynamic `import()`/`require()` with a computed specifier, string-bodied timers. Escalates to **critical** inside a shipped artifact (`lib/`, `dist/`, `*.min.js`). |
-| `network-egress` | `NET` | high | `fetch`, `http`/`https`/`net`/`dgram`/`tls`, WebSocket/SSE, DNS lookups, literal remote URLs, and endpoints **assembled or decoded at runtime**. |
-| `credential-access` | `CRED` | high | `~/.claude`, `~/.codex`, OpenCode `auth.json`, `~/.ssh`, `~/.aws`, `.env` reads, OS keychains, `~/.dsh` profile storage, and bulk `process.env` enumeration. |
-| `lifecycle-hooks` | `HOOK` | medium | npm `preinstall`/`install`/`postinstall`/`prepare` scripts (parsed from `package.json`, severity raised when the command spawns a shell), process-lifecycle handlers, top-level timers and IIFEs, runtime `npm`/`npx` invocation. |
-| `obfuscation` | `OBFU` | medium | High-entropy encoded blobs (Shannon ≥ 4.2 bits/char), decode-then-`eval` chains, obfuscator.io `_0x` identifiers and string-array rotation, zero-width/bidi characters, Latin↔Cyrillic homoglyph identifiers, hex-escaped member access. |
+| `dynamic-eval` | `EXEC` | high | `eval`, `new Function`, bare `Function(...)`, indirect and aliased eval (`(0, eval)`, `globalThis.eval`, `const e = eval`), `vm.*`, `child_process`, `process.binding`, dynamic `import()`/`require()` with a computed specifier, string-bodied and decode-fed timers. Escalates to **critical** inside a shipped artifact (`lib/`, `dist/`, `*.min.js`). |
+| `network-egress` | `NET` | high | `fetch`, `http`/`https`/`net`/`dgram`/`tls`, WebSocket/SSE, DNS lookups, literal remote URLs, third-party HTTP clients (`axios`, `got`, `node-fetch`, `undici`, `ky`, …), cloud instance-metadata endpoints, and endpoints **assembled or decoded at runtime**. |
+| `credential-access` | `CRED` | high | `~/.claude`, `~/.codex`, OpenCode `auth.json`, `~/.ssh`, `~/.aws`, `.env` reads, OS keychains, `~/.dsh` profile storage, bulk `process.env` enumeration including the computed `process["env"]` form, and undocumented string-keyed `process` members. |
+| `lifecycle-hooks` | `HOOK` | medium | npm `preinstall`/`install`/`postinstall`/`prepare` scripts (parsed from `package.json`, severity raised when the command spawns a shell), process-lifecycle handlers, top-level timers and IIFEs, runtime `npm`/`npx` invocation. Runtime-only: CI workflows and docs are out of scope. |
+| `obfuscation` | `OBFU` | medium | High-entropy encoded blobs (Shannon ≥ 4.2 bits/char, with a low-severity second tier at 48 chars), decode-then-`eval` chains both adjacent and **staged through variables**, obfuscator.io `_0x` identifiers and string-array rotation, zero-width/bidi characters, Latin↔Cyrillic homoglyph identifiers, hex-escaped member access. |
+
+Detector IDs, so a finding on a card can be traced back to its rationale:
+
+| ID | Severity | What it means |
+|---|---|---|
+| `EXEC-001`…`EXEC-009` | high / critical | Direct `eval`, `new Function`, `vm`, `child_process` import, spawn-family call, computed `import()`/`require()`, `process.binding`, literal string timer body. |
+| `EXEC-010` | high / critical | Indirect eval: `(0, eval)`, `globalThis.eval`, `globalThis["eval"]`. |
+| `EXEC-011` | high / critical | `eval` aliased to a variable; the call site hides behind an ordinary identifier. |
+| `EXEC-012` | high / critical | `Function(...)` called without `new`. |
+| `EXEC-013` | high / critical | Timer body produced by a decode call: delayed dynamic execution. |
+| `EXEC-014` | medium | Timer first argument is neither a function literal nor a plain reference. Low confidence by design. |
+| `NET-001`…`NET-009` | low → critical | fetch, socket/HTTP client call, core-module import, WebSocket/SSE, XHR, DNS, unknown-host URL, known-host URL, decode-fed request target. |
+| `NET-010` | high | URL concatenation whose operands include a decode call. |
+| `NET-011` | medium | Imports a third-party HTTP client library. Common and legitimate; the card must list the capability. |
+| `NET-012` | critical | Request target is a cloud instance-metadata or link-local address. |
+| `NET-013` | medium | Base URL assembled from configuration values. The benign counterpart of `NET-010`. |
+| `NET-014` | medium | Request target is an opaque variable, in a file that also decodes data. |
+| `CRED-001`…`CRED-010` | medium → critical | Credential directories and files, `.env` reads, OS keychains, secret-shaped env vars, bulk `process.env` enumeration (`process.env` and `process["env"]`). |
+| `CRED-011` | medium | String-keyed access to an undocumented `process` member, e.g. `process["binding"]`. |
+| `CRED-012` | high | The whole environment object is aliased to a variable, enabling enumeration away from the `process.env` token. |
+| `HOOK-000`…`HOOK-007` | low → high | Unparseable manifest, install-time hooks (shell-spawning or not), Cordis and process lifecycle listeners, top-level IIFEs and timers, runtime `npm`/`npx`. |
+| `OBFU-001` | medium | High-entropy literal ≥ 120 chars. |
+| `OBFU-002`…`OBFU-009` | medium / high / critical | Adjacent decode-then-execute, large base64/hex blob, `_0x` identifiers, string-array rotation, zero-width and bidi controls, homoglyph identifiers, `fromCharCode` rebuilds, hex-escaped member access. |
+| `OBFU-010` | medium | A decode call anywhere in a module that also executes code or performs network I/O. Adjacency is not required. |
+| `OBFU-011` | low | Unicode line separator (U+2028/U+2029). Separated from the bidi-override case, which stays high. |
+| `OBFU-012` | low | High-entropy literal between 48 and 120 chars inside a decoding or executing module: split-payload evidence. |
+| `SUPPLY-000` | low | A rule crashed on a file; it was not fully analyzed. |
+| `SUPPLY-001` | high | A file exceeded the scan limit and its contents were not read at all. |
 
 ### Precision, on purpose
 
@@ -91,7 +119,19 @@ positives:
 - **Minification is not obfuscation.** `terser`-style short names are ignored; `_0x`-style hex
   names and string-array rotation are not.
 - **Reading one named env var is normal**; `Object.keys(process.env)` is not, and is graded
-  differently.
+  differently. Computed access (`process["env"]`) is treated identically to the literal form,
+  because using a string key is a choice to be harder to read, not a different operation.
+- **`RegExp.prototype.exec` is not a process spawn.** `/^v(\d+)/.exec(version)` is idiomatic JS,
+  so the spawn detector rejects member-call and regex-literal forms; a real `child_process` import
+  is caught independently.
+- **A configurable base URL is not concealment.** `"https://" + host` is how well-behaved API
+  plugins are written, and is reported at medium (`NET-013`); high is reserved for concatenation
+  fed by a decode call.
+- **A leading UTF-8 BOM is an editor artifact**, not a Trojan Source attack; it cannot conceal
+  anything because nothing precedes it. Bidi overrides after offset 0 remain high.
+- **CI workflows and docs are build-time, not runtime.** `npm install` in a GitHub Actions job is
+  the job's purpose, so the HOOK family does not apply there, and `#` comments in YAML are masked
+  before credential detectors run.
 - **Expected hosts** (npm, GitHub, DeepSeek) are still reported — the card lists all egress — but at
   `low` severity, so they do not drown out an unknown endpoint.
 - Every finding carries a `confidence` score; regex detectors never claim `1.0`.
@@ -109,6 +149,10 @@ lower it:**
 | Gate | Effect | Source |
 |---|---|---|
 | `cred-plus-net` | **F** | Credential access and network egress in the same module. Reachability is unproven, so it is treated as reachable. |
+| `cred-plus-net-split` | **F** | The same pair split across modules of one package, with a concealment signal present. Splitting the files does not make the flow unreachable. |
+| `cred-plus-net-package` | **D** | The same pair split across modules of one package with no concealment signal. The flow between them is unproven in either direction. |
+| `finding-density` | **C** | One behavior family appears in three or more separate files. Fragmenting findings dilutes per-severity counts without reducing the capability. |
+| `unanalyzed-content` | **C** | At least one file exceeded the scan limit and was not read. Absence of findings there is absence of evidence. |
 | `obfuscated-payload-executed` | **F** | Decoded data passed to `eval`/`Function`. |
 | `concealed-egress` | **F** | Request target decoded at runtime rather than declared. |
 | `install-hook-shell` | **D** | An npm install hook spawns a shell before consent. |
@@ -150,7 +194,7 @@ trust layer:
 src/
   index.ts            directory walk + CLI (exit codes for CI)
   report.ts           grading, canonical JSON, markdown card
-  self-test.ts        node:test smoke suite (43 assertions)
+  self-test.ts        node:test suite (90 tests)
   rules/
     types.ts          Rule/Finding types, comment masking, line index, detector driver
     index.ts          registry + corpus digest

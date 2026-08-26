@@ -1,0 +1,202 @@
+{
+  "generatedFrom": "docs/catalog/INDEX.md + docs/catalog/manifest.json",
+  "snapshot": "2026-08-19",
+  "distribution": {
+    "A": 0,
+    "B": 6,
+    "C": 8,
+    "D": 0,
+    "F": 0
+  },
+  "grades": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "F"
+  ],
+  "categories": [
+    "browser",
+    "dev",
+    "docs",
+    "git",
+    "identity",
+    "market",
+    "memory",
+    "security",
+    "ui",
+    "usage",
+    "vision",
+    "workflow"
+  ],
+  "plugins": [
+    {
+      "grade": "B",
+      "name": "OpenViking memory plugin",
+      "repo": "volcengine/OpenViking",
+      "stars": 29567,
+      "verdict": "Conversation data flows only to the endpoint you pin, loopback by default; no dynamic execution, no telemetry, no child processes from the plugin.",
+      "verified": "2026-08-26",
+      "card": "cards/openviking.md",
+      "category": "memory",
+      "description": "OpenViking memory and context bundle for DeepSeek Harness: pre-step auto-recall and profile injection, session capture, `viking://` URI guarding, and recall/write memory tools backed by an OpenViking server.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/openviking.md"
+    },
+    {
+      "grade": "B",
+      "name": "Archify (`@tt-a1i/archify-dsh`)",
+      "repo": "tt-a1i/archify",
+      "stars": 14283,
+      "verdict": "Host adapter is 21 lines of path math; all capability lives in the user-invoked skill CLI behind layered SSRF guards; no telemetry, no credential access.",
+      "verified": "2026-08-26",
+      "card": "cards/archify.md",
+      "category": "docs",
+      "description": "Generate validated, self-contained interactive architecture, workflow, sequence, data-flow, and lifecycle diagrams from repositories or system descriptions.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/archify.md"
+    },
+    {
+      "grade": "B",
+      "name": "modlens (`@liustack/modlens`)",
+      "repo": "liustack/modlens",
+      "stars": 3152,
+      "verdict": "Network targets only named vision endpoints plus its own loopback routes; credentials are touched solely for existence checks and opt-in reuse grants.",
+      "verified": "2026-08-25",
+      "card": "cards/modlens.md",
+      "category": "vision",
+      "description": "Vision bridge for text-only models: paste an image, get structured JSON evidence (OCR, layout, semantics).",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/modlens.md"
+    },
+    {
+      "grade": "B",
+      "name": "dsh-better-sidebar",
+      "repo": "omdsh-dev/DSH-better-sidebar",
+      "stars": 2216,
+      "verdict": "No telemetry, third-party egress, or credential reads; hands the model a real shell through terminal tools, which is the documented product.",
+      "verified": "2026-08-25",
+      "card": "cards/dsh-better-sidebar.md",
+      "category": "ui",
+      "description": "Full sidebar workbench with file rendering and editing, terminal, Git, and subagents; third-party plugins can register new tabs.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-better-sidebar.md"
+    },
+    {
+      "grade": "B",
+      "name": "dsh-context",
+      "repo": "bowenliang123/dsh-context",
+      "stars": 416,
+      "verdict": "One cached npm version check, zero credential reads, no dynamic execution; system prompts and messages render in the web UI by design.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-context.md",
+      "category": "usage",
+      "description": "DSH context insight panel: Context dashboard + /context command + Context browser — one-stop context lifecycle management with categorized composition, content details, evolution trends, compaction/injection events, and stats.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-context.md"
+    },
+    {
+      "grade": "B",
+      "name": "ponytail (`@mengyuly/dsh-ponytail`)",
+      "repo": "MengYuil/dsh-ponytail",
+      "stars": null,
+      "verdict": "Shipped bundle has no egress, credential access, dynamic execution, or install hooks; the published npm tarball is byte-identical to the audited commit.",
+      "verified": "2026-08-25",
+      "card": "cards/ponytail.md",
+      "category": "identity",
+      "description": "Port of ponytail: an always-on lazy-senior-developer coding persona with intensity levels, persistence of the default level, and review, audit, debt, gain and help skills for DeepSeek Harness.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ponytail.md"
+    },
+    {
+      "grade": "C",
+      "name": "ouroboros",
+      "repo": "Q00/ouroboros",
+      "stars": 5565,
+      "verdict": "No malicious indicators, but phones home by default (documented, opt-out), reaches pypi.org before consent, and runs floating PyPI builds rather than the audited commit.",
+      "verified": "2026-08-26",
+      "card": "cards/ouroboros.md",
+      "category": "workflow",
+      "description": "Config-only bundle that mounts Ouroboros through the DSH MCP client, exposing 36 interview, Seed, execution, evaluation, and evolution workflow tools in DSH.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ouroboros.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-web-ui family (`@linxin666/*`)",
+      "repo": "zhu1090093659/dsh-web-ui",
+      "stars": 4661,
+      "verdict": "No malicious behavior found on any audited surface; capped at C because the behavioral probe and cross-model review did not run, telemetry lacks opt-in, and SSH secrets sit in plaintext.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-web-ui.md",
+      "category": "git",
+      "description": "Git branch selector and Git graph for the dsh web GUI: switch branches and explore branch-lane and commit history from the conversation header.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-web-ui.md"
+    },
+    {
+      "grade": "C",
+      "name": "mirage (`@struktoai/mirage-dsh`)",
+      "repo": "strukto-ai/mirage",
+      "stars": 3520,
+      "verdict": "Nothing malicious found, but it executes agent-supplied code by design, its configured doors reach the real host, and the audited commit matches no published npm artifact.",
+      "verified": "2026-08-26",
+      "card": "cards/mirage.md",
+      "category": "dev",
+      "description": "Swaps the filesystem and bash providers for a mirage virtual workspace: file tools and shell commands run over mounted resources (RAM, S3, Redis, Slack, Gmail, Notion, Postgres) instead of the host disk, with per-mount read/write/exec modes, per-command sandbox routing (monty, pyodide, quickjs in process; docker, e2b, daytona remote), and installed CLIs (git, gh, slack, linear, ntn, gws, or one you register) as head words in the virtual terminal.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/mirage.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-tui (`@deepseek-harness-tui/dsh-tui`)",
+      "repo": "ccch1mneyyy/dsh-TUI",
+      "stars": 2009,
+      "verdict": "Source review is clean (no keylogging beyond prompt input, egress limited to a balance API and npm checks); the compiled artifact npm actually ships could not be verified against it.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-tui.md",
+      "category": "ui",
+      "description": "Claude Code-style full-screen terminal UI: pixel-whale header, live status line, and streaming thought expansion.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-tui.md"
+    },
+    {
+      "grade": "C",
+      "name": "dshmarket (`dshmarket`)",
+      "repo": "dsh-market/dsh-market",
+      "stars": 1100,
+      "verdict": "Install path is well-guarded (curated allowlist, DNS-pinned SSRF defenses, zero telemetry), but installs resolve to latest at click time and backups can carry unmasked profile secrets.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-market.md",
+      "category": "market",
+      "description": "Browse, search and install community plugins from inside DeepSeek Harness settings, with category filters, one-click updates, enable/disable, theme switching and configuration backup.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-market.md"
+    },
+    {
+      "grade": "C",
+      "name": "api-relay-audit",
+      "repo": "toby-bridges/api-relay-audit",
+      "stars": 791,
+      "verdict": "Touches exactly the key you hand it and sends it nowhere but the relay under test; capped at C because no sandboxed probe or cross-model review ran for this pass.",
+      "verified": "2026-08-25",
+      "card": "cards/api-relay-audit.md",
+      "category": "security",
+      "description": "Runs local security audits of AI API relays and LLM proxies from DeepSeek Harness, producing Markdown reports for prompt injection, model substitution signals, tool-call rewriting, error leakage, stream integrity, and profile-gated Web3 risks.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/api-relay-audit.md"
+    },
+    {
+      "grade": "C",
+      "name": "Tencent BrowserSkill DSH plugin",
+      "repo": "Tencent/BrowserSkill",
+      "stars": null,
+      "verdict": "Near-maximum Chrome permissions kept loopback-only with consent gates, yet an agent can read logged-in pages on prompt-level rails alone, and the daemon auto-updates itself by default.",
+      "verified": "2026-08-26",
+      "card": "cards/browserskill.md",
+      "category": "browser",
+      "description": "BrowserSkill bridge for controlling visible Chrome and Edge Agent Windows from DeepSeek Harness, with native browser tools, accessibility and VOM observations, screenshots, owned multi-session control, and a live Web UI overlay.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/browserskill.md"
+    },
+    {
+      "grade": "C",
+      "name": "memsearch (`@zilliz/memsearch-dsh`)",
+      "repo": "zilliztech/memsearch",
+      "stars": null,
+      "verdict": "All egress goes to well-known endpoints with no credential theft, but session hooks pipe astral.sh's installer straight into a shell unpinned, which hard-caps the grade.",
+      "verified": "2026-08-26",
+      "card": "cards/memsearch.md",
+      "category": "memory",
+      "description": "Shared Markdown memory for DSH and other coding agents, with automatic capture, pre-step context injection, searchable recall, and memory-to-skill self-evolution through a review panel.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/memsearch.md"
+    }
+  ]
+}

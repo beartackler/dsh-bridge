@@ -15,7 +15,6 @@
 
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -903,7 +902,7 @@ describe("browse command runner", () => {
 // ---------------------------------------------------------------------------
 // 6. /connect phase 1: detection, masking, reachability
 // ---------------------------------------------------------------------------
-const { detectCredentials, parseConnectArgs, runConnect, testProviderReachability } = await import(
+const { detectCredentials, parseConnectArgs, runConnect, smokeProvider, renderSmoke } = await import(
   `${dist}/commands/connect.js`
 );
 
@@ -912,11 +911,6 @@ interface DetectionRowShape {
   readonly provider: string;
   readonly source: string;
   readonly status: string;
-  readonly detail: string;
-}
-interface ReachabilityStepShape {
-  readonly step: "dns" | "tcp";
-  readonly ok: boolean;
   readonly detail: string;
 }
 
@@ -1074,46 +1068,44 @@ describe("connect arg parsing", () => {
   });
 });
 
-describe("connect reachability smoke", () => {
-  it("resolves and connects to a loopback listener end to end", async () => {
-    const server = createServer();
-    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
-    const address = server.address();
-    if (address === null || typeof address === "string") throw new Error("no tcp address");
-    try {
-      const outcome = await testProviderReachability("deepseek", {
-        timeoutMs: 2000,
-        target: { host: address.address, port: address.port, label: "loopback" },
-      });
-      assert.equal(outcome.ok, true);
-      assert.deepEqual(outcome.steps.map((step: ReachabilityStepShape) => step.step).sort(), ["dns", "tcp"]);
-      assert.match(outcome.steps[0]?.detail ?? "", /^resolved /);
-      assert.match(outcome.steps[1]?.detail ?? "", /open in \d+ ms/);
-    } finally {
-      server.close();
-    }
+describe("connect smoke test", () => {
+  it("sends one unauthenticated HEAD request to the provider base URL", async () => {
+    const seen: { url: string; method: string }[] = [];
+    const outcome = await smokeProvider("deepseek", {
+      fetchImpl: async (url: string, init: { method: string }) => {
+        seen.push({ url, method: init.method });
+        return { status: 200 };
+      },
+    });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0]?.method, "HEAD");
+    assert.match(seen[0]?.url ?? "", /^https:\/\/api\.deepseek\.com/);
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.status, 200);
   });
 
-  it("fails cleanly when DNS cannot resolve", async () => {
-    const outcome = await testProviderReachability("openai", {
-      timeoutMs: 1000,
-      target: { host: "nonexistent.invalid.dsh-bridge.test", port: 443, label: "invalid" },
+  it("fails cleanly when the host cannot be reached", async () => {
+    const outcome = await smokeProvider("openai", {
+      fetchImpl: async () => {
+        const error = new Error("getaddrinfo ENOTFOUND") as NodeJS.ErrnoException;
+        error.code = "ENOTFOUND";
+        throw error;
+      },
     });
     assert.equal(outcome.ok, false);
-    assert.equal(outcome.steps.length, 1);
-    assert.equal(outcome.steps[0]?.step, "dns");
-    assert.equal(outcome.steps[0]?.ok, false);
+    assert.match(outcome.detail, /unreachable \(ENOTFOUND\)/);
   });
 
   it("refuses unknown providers instead of guessing", async () => {
-    await assert.rejects(() => testProviderReachability("not-a-provider"), /unknown provider/);
+    await assert.rejects(() => smokeProvider("not-a-provider"), /unknown provider/);
   });
 
-  it("runs through the command runner and keeps output ASCII-only", async () => {
+  it("renders the smoke card and keeps output ASCII-only", async () => {
     const home = scratchDir("dshb-connect-testcmd-");
-    const result = await runConnect(connectContext(home, join(home, ".dsh")), { _: "test", rest: "deepseek" });
-    assert.ok(result.markdown.includes("DNS/TCP only; no credentials transmitted"));
-    for (const char of result.markdown) {
+    const outcome = await smokeProvider("deepseek", { fetchImpl: async () => ({ status: 200 }) });
+    const markdown = renderSmoke(connectContext(home, join(home, ".dsh")), "deepseek", outcome);
+    assert.ok(markdown.includes("HEAD, no Authorization header"));
+    for (const char of markdown) {
       const code = char.codePointAt(0) ?? 0;
       assert.ok(code <= 127, `non-ASCII leaked into connect output: ${char}`);
     }

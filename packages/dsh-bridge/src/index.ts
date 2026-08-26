@@ -94,6 +94,7 @@ export function apply(ctx: Context, config: Config): void {
   // implemented command replaces its stub in place:
   //   /bridge-help    -> src/commands/help.ts    (docs/specs/commands/help.md)
   //   /bridge-connect -> src/commands/connect.ts (docs/specs/commands/connect.md)
+  //   /bridge-install -> src/commands/install.ts (docs/specs/commands/install.md)
   // Remaining surface (/model, /login, /init, /review, /compact, /resume,
   // /memory, /mcp) mounts here as specs land.
   for (const command of bridgeCommandTable(bridgeContext)) {

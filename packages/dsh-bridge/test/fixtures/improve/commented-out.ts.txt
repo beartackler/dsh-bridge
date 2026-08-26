@@ -1,0 +1,5 @@
+export function ping(): string {
+  // const legacy = compute(input);
+  // if (legacy) { return legacy; }
+  return "pong";
+}

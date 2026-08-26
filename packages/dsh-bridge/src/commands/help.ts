@@ -23,8 +23,10 @@ import type { BridgeContext, CommandResult } from "../lib/types.js";
  * registered command can never silently vanish from the listing.
  */
 const GROUPS: readonly (readonly [title: string, names: ReadonlySet<string>])[] = [
-  ["Setup", new Set(["init", "login", "connect", "model", "memory", "help"])],
+  ["Setup", new Set(["init", "login", "connect", "model", "memory", "mcp", "help"])],
   ["Catalog", new Set(["browse", "install", "suggest", "trust"])],
+  ["Session", new Set(["compact", "resume"])],
+  ["Code", new Set(["review", "improve", "refactor"])],
   ["Diagnostics", new Set(["doctor", "status"])],
 ];
 

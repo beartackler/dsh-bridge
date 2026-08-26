@@ -32,6 +32,20 @@ function isPackageJson(filePath: string): boolean {
 }
 
 /**
+ * Build-time files: CI workflows, docs, and config that a maintainer runs, not code the
+ * harness loads. `npm install` in a CI job is the job's whole point; treating it as a
+ * runtime package-manager invocation graded the project's own clean starter template a D.
+ * HOOK detectors describe *runtime* behavior, so they do not apply here.
+ */
+function isBuildTimeFile(filePath: string): boolean {
+  return (
+    /(^|\/)\.github\//.test(filePath) ||
+    /(^|\/)(docs|examples|\.circleci|\.gitlab)\//.test(filePath) ||
+    /\.(ya?ml|md)$/.test(filePath)
+  );
+}
+
+/**
  * Parse package.json scripts and report install-time hooks with real line numbers.
  * JSON.parse loses positions, so the parsed value tells us *what* to report and a
  * targeted search tells us *where*, keeping citations checkable.
@@ -104,7 +118,7 @@ export const lifecycleHooksRule: Rule = {
   id: "lifecycle-hooks",
   family: "HOOK",
   severity: "medium",
-  version: "2026.08.1",
+  version: "2026.08.2",
   description:
     "Detects install-time npm lifecycle scripts and pre-consent load-time side effects (Cordis registrations, top-level timers, self-invoking network calls).",
 
@@ -112,6 +126,9 @@ export const lifecycleHooksRule: Rule = {
     if (isPackageJson(filePath)) {
       return sortFindings(matchPackageJson(content, filePath, this));
     }
+
+    // Runtime-only family: see isBuildTimeFile.
+    if (isBuildTimeFile(filePath)) return [];
 
     return runDetectors({
       rule: { id: this.id, family: this.family, severity: this.severity },

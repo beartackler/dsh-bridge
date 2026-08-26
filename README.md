@@ -9,6 +9,10 @@ dsh-bridge is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 - **Verified plugin catalog.** Community plugins pass an adversarial review before we recommend them. Every verdict ships as a trust report card citing file-and-line evidence you can re-check yourself.
 - **An interface that respects you.** Onboarding wizard and plugin browser built to a real design bar inside the DSH design system.
 
+![Terminal recording of the dsh-bridge connectors flow: credential detection streams in, resolves into a masked detection matrix across anthropic, openai, google and deepseek sources, then a trust report card for @liustack/modlens showing grade B with file-and-line evidence.](site/demo/connect-demo.gif)
+
+Design mockup rendered from the specs in `docs/specs/commands/connect.md` and `docs/catalog/cards/modlens.md`. The commands are not implemented yet. Still frames: [detection matrix](site/demo/connect-matrix-dark.png) ([light](site/demo/connect-matrix-light.png)) · [trust card](site/demo/trust-card-dark.png) ([light](site/demo/trust-card-light.png)).
+
 ## Why
 
 DeepSeek Harness is capable and unfamiliar. It is built on the Cordis kernel, where every capability is a plugin, but its ecosystem skews non-English, unvetted, and unpolished. Adoption stalls on three walls: language, trust, and muscle memory. dsh-bridge addresses all three.

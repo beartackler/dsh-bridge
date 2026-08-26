@@ -42,13 +42,13 @@ a thin UX layer over it; no storage, indexing, or lineage logic is reimplemented
 | List all sessions, newest-first, live-preferred | `sessionQuery.listSessions(signal?)` → `SessionRecord[]`, "deterministic newest-first cloned session records" | `session-query/src/index.ts:130-136`; sort key `createdAt` desc, id tiebreak at `session-query/src/corpus.ts:299-301` |
 | Live/persisted availability per session | `SessionRecord { header, live, persisted }` | `session-query/src/types.ts:24-31` |
 | Batch titles without N round-trips | `readTitleSnapshots(ids, signal?)` → per-id fulfilled/rejected, folds latest `session/title` | `session-query/src/index.ts:197-215` (single-corpus-observation batch via `corpus.projectMany`, `corpus.ts:128-220`); fold itself: `packages/session/session-title/src/index.ts:191-201` |
-| Per-session event records (type + time) | `listEvents(sessionId)` → ascending-seq `SessionEventRecord[]` with `time` (epoch ms) | `session-query/src/index.ts:217-225`; record shape `session-query/src/types.ts:61-70` |
-| Metadata filters (cwd, created-at range, availability, parent) | `filterSessions(filters)` — ANDed clauses, ORed values | `session-query/src/index.ts:151-165`; clause union `session-query/src/types.ts:194-199` |
+| Per-session event records (type + time) | `listEvents(sessionId)` → ascending-seq `SessionEventRecord[]` with `time` (epoch ms) | `session-query/src/index.ts:217-225`; record shape `session-query/src/types.ts:52-63` |
+| Metadata filters (cwd, created-at range, availability, parent) | `filterSessions(filters)` — ANDed clauses, ORed values | `session-query/src/index.ts:149-165`; clause union `session-query/src/types.ts:194-199` |
 | Literal substring scan for fallback filtering | `compileSessionTextFilter(text)` — case-insensitive, whitespace-flexible, injection-safe | `session-query/src/filters.ts:100-118` |
-| Full-text search (optional backend) | `searchSessions()` grouped by session with `bestMatch` excerpts | `session-query/src/types.ts:241-253` (request), `:276-279` (`SessionSearchHit.bestMatch`); SQLite FTS5 provider `session-query/session-query-sqlite/README.md:5-11` |
+| Full-text search (optional backend) | `searchSessions()` grouped by session with `bestMatch` excerpts | `session-query/src/types.ts:242-254` (request), `:276-279` (`SessionSearchHit.bestMatch`); SQLite FTS5 provider `session-query/session-query-sqlite/README.md:5-11` |
 | Resume (rehydrate a durable session as live) | `agentLoop.resume(ownerCtx, { resumeSessionId })` — requires a mounted `sessionPersistence`, else typed error; loads via `persistence.prepare(id)` and republishes the same id | `packages/core/agent-loop/src/index.ts:650-658` (guard: *"cannot resume: session persistence is not configured"*), `:662-700` (`resumeWith` → `prepare` → `setupAndPublish(..., 'resume')`) |
 | Persistence contract (list/inspect) | `SessionPersistence.abstract list(): Promise<SessionHeader[]>`, `inspect(id): Promise<SessionInspection>` | `packages/session/session-persistence/src/index.ts:228`, `:200` |
-| Fork (branch a child copy) | `sessions.fork(source, boundary?, childId?)` — seeds child with prefix, stamps `parentSession` + `seedLength` | `packages/core/session/src/index.ts:1081-1096`; header fields `packages/core/session/src/types.ts:74-80`; rejection codes `SESSION_NOT_FOUND` / `SESSION_NOT_LIVE` / `SESSION_ALREADY_EXISTS` / `INVALID_BOUNDARY` / `OPEN_TURN` at `core/session/src/index.ts:763-776` |
+| Fork (branch a child copy) | `sessions.fork(source, boundary?, childId?)` — seeds child with prefix, stamps `parentSession` + `seedLength` | `packages/core/session/src/index.ts:1081-1096`; header fields `packages/core/session/src/types.ts:74-80`; rejection codes `SESSION_NOT_FOUND` / `SESSION_NOT_LIVE` / `SESSION_ALREADY_EXISTS` / `INVALID_BOUNDARY` / `OPEN_TURN` at `core/session/src/index.ts:771-776` |
 | What counts as a "message" | Only surface-eligible types produce LLM messages: `user/message`, `assistant/message`, `tool/result` | `packages/core/session/src/types.ts:343-352`; surface states `current`/`shadowed`/`log-only` at `session-query/src/types.ts:20-22` |
 | Proven UI pattern for slash-command modals | Shared Modal used by both a header action and the Web `/export` slash command | `session-query/session-log-export/src/client/Dialog.tsx:24-49`; human-command plane keeps model history clean (`session-log-export/README.md:32-43`) |
 
@@ -59,11 +59,12 @@ a thin UX layer over it; no storage, indexing, or lineage logic is reimplemented
 2. **cwd scoping must be explicit.** Native filters treat cwd as data; the picker defaults to
    exact-equality with the current session cwd, mirroring the conservative workspace rule the
    model-facing tools already use (`tool-session-query/README.md:14-15`).
-3. **Subagent noise.** Headers carry `origin: 'subagent'` (`core/session/src/types.ts:84-85`);
+3. **Subagent noise.** Headers carry `origin: 'subagent'` (`core/session/src/types.ts:85`);
    a human picker should hide those by default (flag to show).
-4. **Cold-session forks need a documented two-step.** `fork()` resolves its source through the
-   *live* store only (`_resolveForkSource` → `SESSION_NOT_LIVE` otherwise,
-   `core/session/src/index.ts:1070-1080`). See §5.
+4. **Cold-session forks need a documented two-step.** `fork()` documents its source as "either
+   the live session object or its live store id" (`core/session/src/index.ts:760-761`) and its
+   resolver rejects anything else with `SESSION_NOT_FOUND`/`SESSION_NOT_LIVE`
+   (`core/session/src/index.ts:1140-1155`). See §5.
 
 ---
 
@@ -74,12 +75,12 @@ Terminal rendering (TUI/Web share the same row model):
 ```
   /resume  ·  ~/Documents/GitHub/dsh-bridge  ·  14 sessions  ·  ↑↓ move · ⇥ preview · f fork · ⏎ resume · / filter · esc
 
-> 1  2h ago    Spec sprint: /resume picker                    38 msgs   ● live
-    2  5h ago    Adversarial audit: dsh-market install flow     112 msgs
-    3  yesterday Trust report cards: grading rubric draft       54 msgs
-    4  yesterday Fix gh auth token rotation                   9 msgs
-    5  2d ago      Onboarding wizard copy pass                  27 msgs
-    ▸ 6  2d ago    Refactor: session-query fixture seeding      71 msgs
+> 1  2h ago     Spec sprint: /resume picker                   38 msgs  ● live
+  2  5h ago     Adversarial audit: dsh-market install flow   112 msgs
+  3  yesterday  Trust report cards: grading rubric draft      54 msgs
+  4  yesterday  Fix gh auth token rotation                     9 msgs
+  5  2d ago     Onboarding wizard copy pass                   27 msgs
+▸ 6  2d ago     Refactor: session-query fixture seeding       71 msgs
     ┌──────────────────────────────────────────────────────────────────┐
     │ Refactor: session-query fixture seeding            2d ago        │
     │                                                                  │
@@ -100,21 +101,20 @@ Row fields and where each comes from:
 
 | Field | Source | Evidence |
 |---|---|---|
-| Relative time (`2h ago`) | `header.createdAt` (Unix ms) formatted relatively; absolute on hover/expand. Last-activity variant: last `SessionEventRecord.time` | `session-query/src/types.ts:67` (createdAt is header field, `core/session/src/types.ts:70-71`); event `time` `session-query/src/types.ts:67` |
-| Title | `readTitleSnapshots` batch fold; falls back to `Untitled session` when no `session/title` event exists yet | `session-query/src/index.ts:197-215`; title absence is normal (`types.ts:156-157`: title "absent when the observed log has no title") |
+| Relative time (`2h ago`) | `header.createdAt` (Unix ms) formatted relatively; absolute on hover/expand. Last-activity variant: last `SessionEventRecord.time` | `core/session/src/types.ts:70-71` (createdAt); event `time` `session-query/src/types.ts:60-61` |
+| Title | `readTitleSnapshots` batch fold; falls back to `Untitled session` when no `session/title` event exists yet | `session-query/src/index.ts:204-215`; title absence is normal (`types.ts:153-157`: title "absent when the observed log has no title") |
 | Msg count | Count of surface-eligible `user/message` + `assistant/message` events (tool results excluded from the headline number), computed from `listEvents` type counts | `core/session/src/types.ts:343-352` |
 | `● live` badge | `SessionRecord.live` | `session-query/src/types.ts:28` |
 | `archived` badge | `!record.live && record.persisted` | `session-query/src/types.ts:29-30` |
-| `forked from …` | `header.parentSession` (+ `seedLength`) rendered via one `traceSession` call when needed | `core/session/src/types.ts:74-80`; `session-query/src/index.ts:273-283` |
-| Preview excerpt | First eligible `user/message` text (no search active) or `bestMatch.snippet` (filter active) | `session-query/src/index.ts:55-58` (`extractSessionEventText` export); snippet shape `session-query/src/types.ts:270-273` |
+| `forked from …` | `header.parentSession` (+ `seedLength`) rendered via one `traceSession` call when needed | `core/session/src/types.ts:74-80`; `session-query/src/index.ts:279-283` |
+| Preview excerpt | First eligible `user/message` text (no search active) or `bestMatch.snippet` (filter active) | `session-query/src/index.ts:57` (`extractSessionEventText` export); snippet shape `session-query/src/types.ts:270-273` |
 
 Rules:
 
 - **Ordering is native**: newest-created first, exactly as `listSessions` guarantees — do not re-sort client-side.
-- **Page size 20**, matching the SQLite backend's own default limit (`session-query-sqlite/README.md:33`).
-- **Previews never print secrets**: excerpt text is truncated to ~240 code points (the backend's own snippet bound, `session-query-sqlite/README.md:35`) and scrubbed by the same secret-location-only rule other bridge commands follow (CHARTER: "never print secrets").
+- **Page size 20**, matching the SQLite backend's own default limit (`session-query-sqlite/README.md:31`).
+- **Previews never print secrets**: excerpt text is truncated to ~240 code points (the backend's own snippet bound, `session-query-sqlite/README.md:33`) and scrubbed by the same secret-location-only rule other bridge commands follow (CHARTER: "never print secrets").
 - **Per-row failure isolation is inherited**: a corrupt/unreadable session renders as `⚠ unavailable` instead of breaking the list — `readTitleSnapshots` already isolates per-id rejections (`session-query/src/types.ts:161-177`).
-
 `/resume <text>` pre-fills the filter: with a full-text backend mounted it routes through
 `searchSessions({ query, sessionFilters })` (ranked, `bestMatch` snippets); without one it
 falls back to the literal scan (`compileSessionTextFilter`, `filters.ts:100-118`) over titles +
@@ -183,8 +183,7 @@ These are different operations on different seams, and the picker must never blu
 | Mental model (claude-code parity) | Continue that conversation where it left off | Branch a copy to try a different path; original untouched |
 | Identity | Same `SessionId` becomes live again | New child id; parent gets a descendant in its lineage tree |
 | History | Full stored log restored verbatim (validated replay) | Prefix copy up to a boundary; `parentSession` + `seedLength` stamp provenance |
-| Native seam | `agentLoop.resume()` via `persistence.prepare(id)` | `sessions.fork(source, boundary?, childId?)` |
-| Evidence | `agent-loop/src/index.ts:650-658`, `:662-700` | `core/session/src/index.ts:1081-1096` |
+| Native seam | `agentLoop.resume()` via `persistence.prepare(id)` — `agent-loop/src/index.ts:653-658`, `:662-700` | `sessions.fork(source, boundary?, childId?)` — `core/session/src/index.ts:1081-1096` |
 
 Semantics the spec pins down:
 
@@ -195,17 +194,17 @@ Semantics the spec pins down:
 2. **Fork writes provenance, not just copies.** The child header carries `parentSession` and
    `seedLength`, which is precisely what lets future tooling distinguish inherited history from
    child work (`core/session/src/types.ts:74-80`). The picker renders that lineage as
-   `forked from …` using `traceSession` (`session-query/src/index.ts:273-283`).
+   `forked from …` using `traceSession` (`session-query/src/index.ts:279-283`).
 3. **Warm vs cold fork targets.** `fork()` only accepts a source that is live in the store
-   (`core/session/src/index.ts:1070-1080`). Therefore:
+   (`core/session/src/index.ts:1140-1155`). Therefore:
    - Highlighted row is `● live` → fork directly (`sessions.fork(id, boundary)`).
    - Row is cold/archived → the picker runs **resume-to-fork**: load through the persistence
      prepare path, publish, immediately `fork()`, then detach if the user only wanted the fork.
      Progress is surfaced in the modal; aborting mid-load leaves nothing half-written because
-     preparation is transactional (`core/session/src/preparation.ts:15-52`).
+     preparation is transactional (`core/session/src/preparation.ts:20-52`).
 4. **MVP boundary = last committed turn.** `fork()` rejects boundaries that aren't contiguous
    seqs or that end mid-turn (`INVALID_BOUNDARY`, `OPEN_TURN`,
-   `core/session/src/index.ts:763-776`), so MVP always forks from the latest safe boundary.
+   `core/session/src/index.ts:771-776`), so MVP always forks from the latest safe boundary.
    Choosing an arbitrary cut-point from the preview timeline is Phase 2.
 5. **Child appears immediately.** Because `listSessions` merges the live store over persistence
    (`corpus.ts:58-77`), a freshly forked child shows up in the picker on next open without any

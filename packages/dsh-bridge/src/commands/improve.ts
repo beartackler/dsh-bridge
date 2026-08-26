@@ -394,13 +394,21 @@ export const DEFAULT_LIMIT = 12;
 
 /** Parse the flag record the command layer hands down. Unknown keys ignored. */
 export function parseImproveArgs(args: Readonly<Record<string, string>>): ImproveOptions {
-  const rawTarget = args["target"] ?? args["_"] ?? "";
+  // The entry splitter (src/index.ts parseArgs) assigns the token after a flag
+  // as that flag's value, so `--diff src/commands` arrives as
+  // {diff: "src/commands"} with no positional. Treat any value other than an
+  // explicit "false" as the flag being set, and its non-boolean value as the
+  // path filter, so the documented `--diff <path>` form works.
+  const rawDiff = args["diff"];
+  const diff = rawDiff !== undefined && rawDiff !== "false";
+  const diffTarget = diff && rawDiff !== "" && rawDiff !== "true" ? rawDiff : "";
+  const rawTarget = args["target"] ?? args["_"] ?? diffTarget;
   const target = rawTarget.trim();
   const minValue = args["min-value"];
   const limit = Number.parseInt(args["limit"] ?? "", 10);
   return {
     ...(target.length > 0 ? { target } : {}),
-    diff: args["diff"] === "true" || args["diff"] === "",
+    diff,
     minValue: minValue === "high" || minValue === "medium" || minValue === "low" ? minValue : "low",
     limit: Number.isFinite(limit) && limit > 0 ? limit : DEFAULT_LIMIT,
   };
@@ -415,9 +423,13 @@ export function auditTargets(deps: ImproveDeps, options: ImproveOptions, cwd: st
 
   if (options.diff) {
     const changed = deps.gitDiffNames(cwd);
+    // `--diff <path>` narrows the changed set. The names may be absolute (the
+    // node deps anchor them to the repo root) or relative (in-memory test
+    // deps), so the prefix is matched against both forms.
+    const target = options.target;
     const filtered =
-      typeof options.target === "string"
-        ? changed.filter((path) => path.startsWith(options.target as string))
+      typeof target === "string"
+        ? changed.filter((path) => path.startsWith(target) || path.startsWith(join(cwd, target)))
         : changed;
     for (const path of filtered) {
       if (isSupported(path)) files.push(path);
@@ -536,12 +548,27 @@ export function defaultImproveDeps(): ImproveDeps {
           .map((line) => line.trim())
           .filter((line) => line.length > 0);
       try {
-        return [...new Set([...run(["diff", "--name-only", "HEAD"]), ...run(["diff", "--name-only", "--cached"])])].sort();
+        // `git diff --name-only` prints paths relative to the repository root,
+        // not to `cwd`. Reading them as-is fails with "unreadable" whenever the
+        // session cwd is a subdirectory (e.g. packages/dsh-bridge), so each
+        // name is anchored to the root git itself reports.
+        const root = run(["rev-parse", "--show-toplevel"])[0] ?? cwd;
+        const names = new Set([
+          ...run(["diff", "--name-only", "HEAD"]),
+          ...run(["diff", "--name-only", "--cached"]),
+        ]);
+        return [...names].sort().map((name) => join(root, name));
       } catch {
         throw new ImproveError("/improve --diff needs a git repository.");
       }
     },
   };
+}
+
+/** Optional session working directory carried on the context. */
+export interface ImproveContext extends BridgeContext {
+  /** Working directory of the current session; defaults to the process cwd. */
+  readonly cwd?: string;
 }
 
 /** /bridge-improve entry point; pure over (ctx, args, deps). */
@@ -552,7 +579,12 @@ export async function runImprove(
 ): Promise<CommandResult> {
   const options = parseImproveArgs(args);
   try {
-    const report = auditTargets(deps, options, ctx.paths.home);
+    // `--diff` runs git in the user's working directory, not in `$HOME`.
+    // `ctx.paths.home` is the credential/config root; using it here pointed
+    // `git diff` at the home directory, which is never the repository under
+    // review. Same shape as resume.ts:241.
+    const cwd = (ctx as ImproveContext).cwd ?? process.cwd();
+    const report = auditTargets(deps, options, cwd);
     return {
       markdown: renderImproveReport(report),
       data: {

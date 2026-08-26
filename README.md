@@ -14,13 +14,9 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](packages/dsh-bridge/package.json)
 [![Built by agent swarm, human reviewed](https://img.shields.io/badge/build-agent%20swarm%2C%20human%20reviewed-lightgrey)](#provenance)
 
-<!--
-  DEMO SLOT: replace this comment with the recorded terminal GIF once captured.
-  <img src="site/demo/connect-demo.gif" width="880" height="480" alt="dsh-bridge connectors flow: credential detection resolves into a masked detection matrix, then a trust report card for @liustack/modlens showing grade B with file-and-line evidence.">
-  Required asset: site/demo/connect-demo.gif, 880x480 logical px (1760x960 @2x), <= 6 MB.
--->
+![dsh-bridge connectors flow: credential detection resolves into a masked detection matrix, then a trust report card for @liustack/modlens showing grade B with file-and-line evidence.](site/demo/connect-demo.gif)
 
-Current stills, rendered from the specs rather than a running build:
+Rendered from the specs rather than a running build. Stills:
 [detection matrix](site/demo/connect-matrix-dark.png) ([light](site/demo/connect-matrix-light.png)) ·
 [trust card](site/demo/trust-card-dark.png) ([light](site/demo/trust-card-light.png)).
 
@@ -47,6 +43,8 @@ Not yet functional. That command is the target shape, proven by existing plugins
 [docs/catalog/INDEX.md](docs/catalog/INDEX.md) lists every plugin that has completed a trust review, with the audited commit and a linked report card.
 
 Grades: **A** verified-clean · **B** safe with documented behavior · **C** use with awareness · **D** risky · **F** do not install. A grade is an evidence-backed opinion over one pinned commit, not a safety guarantee.
+
+<img src="site/demo/trust-card-dark.png" width="520" alt="Trust report card for @liustack/modlens: grade B, with subject commit, sha512 integrity, npm attestation, MIT license, and per-capability findings for network, exec, telemetry, credentials, and filesystem writes.">
 
 ## Commands
 

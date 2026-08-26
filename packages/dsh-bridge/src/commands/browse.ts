@@ -576,7 +576,15 @@ export async function runBrowse(
     return { markdown: notFoundMarkdown((error as Error).message) };
   }
 
-  const tokens = (args["_"] ?? "").split(/\s+/).filter((token) => token !== "");
+  // The entry splitter (src/index.ts parseArgs) puts the first positional in
+  // `_` and the remainder in `rest`, so `find git` arrives as
+  // {_: "find", rest: "git"}. Rejoining both keeps multi-word forms like
+  // `find <query>` and `<category> next` working from the real command line;
+  // tests that pass the whole phrase in `_` keep working because `rest` is
+  // then absent.
+  const tokens = `${args["_"] ?? ""} ${args["rest"] ?? ""}`
+    .split(/\s+/)
+    .filter((token) => token !== "");
   const categories = [...new Set(entries.map((entry) => entry.category))].sort();
 
   let filter: BrowseFilter = {};

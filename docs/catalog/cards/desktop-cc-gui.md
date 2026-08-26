@@ -6,6 +6,7 @@
 |---|---|
 | Plugin family | ccgui 0.9.3 (Tauri 2 desktop client; explicitly NOT a dsh-plugin and not installable via `dsh plugin add`, README.md:16-18) |
 | Pinned subject | github:zhukunpenglinyutong/desktop-cc-gui @ commit `5d1c8a01a2ca8812e96877197127cc6038521a1e` |
+| Published-artifact provenance | Not an npm package; distributed as Tauri installers from GitHub Releases. No npm attestation exists for the release channel; updater integrity rests on the minisign pubkey embedded at src-tauri/tauri.conf.json:73 (release artifacts themselves not downloaded or hash-compared in this audit) |
 | Upstream HEAD at audit | 2026-08-22 22:04:37 +0800 (merge of v0.9.3 version bump) |
 | License | MIT, dual copyright Thomas Ricouard / zhukunpenglinyutong (LICENSE:3-4) |
 | Repo age / activity | 4.1k stars (discovery snapshot 2026-08-19); active, pushed within last 25 days |
@@ -41,7 +42,7 @@ Ceilings applied:
 
 ## What this app can do (capability summary)
 
-- Network egress: your configured AI provider endpoints (Claude/Codex/Gemini/OpenCode/DSH engines); `hm.baidu.com` analytics from the production main window (PV/UV beacon + persisted HMACCOUNT visitor cookie, baidu_tongji.rs:456 area tests confirm exact host/path pinning); github.com release feed checks at startup; SMTP/IMAP servers you configure; Vercel/Bytedance endpoints only via explicitly invoked bundled skills.
+- Network egress: your configured AI provider endpoints (Claude/Codex/Gemini/OpenCode/DSH engines), including a runtime DeepSeek quota check that GETs `https://api.deepseek.com/user/balance` with your DeepSeek key as bearer (coding_plan_quota/types.rs:9, providers.rs:50); relay-provider origins are user-set, not pre-seeded - the literal `fufei.mossx.ai` strings in grok_providers.rs:750,770 are test fixtures parsing a user's `~/.grok/config.toml`, and the same host appears only as a documented example of a relay origin (sessionOverviewViewModel.ts:311); `hm.baidu.com` analytics from the production main window (PV/UV beacon + persisted HMACCOUNT visitor cookie); github.com release feed checks at startup; SMTP/IMAP servers you configure; Vercel/Bytedance endpoints only via explicitly invoked bundled skills.
 - Credential access: reads and writes `~/.claude/settings.json`, `~/.codex/auth.json`, `~/.codex/config.toml`, Gemini/OpenCode configs, and its own `~/.ccgui/config.json` provider store (which holds API keys in JSON at default file permissions); email secret in a 0600 sidecar. Masked in UI, but plaintext on disk.
 - Process execution: engine CLIs as managed children (claude/codex/gemini/opencode/dsh), git operations, LSP integration, computer-use signature verification via `codesign`; bundled `.agents/skills` scripts execute npm/playwright/ffmpeg-class tooling when invoked.
 - Exposure surface: optional remote daemon on 0.0.0.0 with bearer auth; CSP allows `unsafe-eval` plus hm.baidu.com script/connect/img sources (tauri.conf.json:17).
@@ -111,6 +112,6 @@ Scanner: dsh-bridge tools/scan dist build, version 0.1.0, rulesDigest `9cc04224b
 
 | Rev | Verdict digest basis | Change |
 |---|---|---|
-| 1 | commit `5d1c8a01`, scanned and adjudicated 2026-08-26T09:10Z | Initial card. Overall C; per-surface grades as tabulated; mechanical F adjudicated (defensive-guard and i18n false positives dominate); analytics/opt-out gap identified as the headline privacy finding. |
+| 1 | commit `5d1c8a01`, scanned and adjudicated 2026-08-26T09:10Z | Initial card. Overall C; per-surface grades as tabulated; mechanical F adjudicated (defensive-guard and i18n false positives dominate); analytics/opt-out gap identified as the headline privacy finding. Provenance row and egress inventory amended after cross-review with a second auditor (relay-origin clarification, DeepSeek balance endpoint). |
 
 Re-vetting triggers: any change to `baidu_tongji.rs`/`services/baiduTongji.ts` (especially adding an opt-out would lift the privacy cap), any updater endpoint or pubkey change, any new daemon route, a new tagged release shipping different binaries, or 90 days elapsed.

@@ -208,7 +208,20 @@ export async function runCompact(ctx, args) {
     const before = safeMeasure(hooks);
     const result = await hooks.compactNow(mode.instructions === "" ? undefined : mode.instructions);
     if (result === null) {
-        return { markdown: "No compactable history yet.", data: { mode: "compact", compacted: false } };
+        return {
+            markdown: [
+                heading("/bridge-compact"),
+                "No compactable history yet. The host accepted the request but found nothing",
+                "old enough to shadow, so the context is unchanged and no tokens were spent.",
+                "",
+                "Compaction needs finished turns behind the live window; a fresh or already",
+                "compacted session has none.",
+                "",
+                "Check what there is to work with: `/bridge-compact status`.",
+                "",
+            ].join("\n"),
+            data: { mode: "compact", compacted: false },
+        };
     }
     // Measurement is best-effort: a reporting failure must never turn a
     // committed compaction into a reported error (compact spec §3.5).

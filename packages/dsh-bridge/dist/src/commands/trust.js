@@ -15,6 +15,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { gradeCell, gradeLabel } from "../lib/output.js";
 import { scanDirectory } from "../lib/scan-client.js";
 import { SEVERITIES } from "../lib/types.js";
 const USAGE = "Usage: /bridge-trust <plugin> | scan <directory> | list";
@@ -93,7 +94,7 @@ export function renderCard(ctx, slug, markdown) {
     const grade = gradeFromCard(parsed.headerTable) ?? gradeFromCard(markdown);
     const parts = [`### ${parsed.title || `Trust report: ${slug}`}`, ""];
     parts.push(ctx.output.card("TRUST REPORT CARD", [
-        ["grade", grade ?? "unknown"],
+        ["grade", gradeLabel(grade)],
         ["card", `docs/catalog/cards/${slug}.md`],
     ]));
     if (parsed.headerTable !== "")
@@ -125,15 +126,21 @@ function listCards(ctx) {
         return [
             "### Reviewed plugins",
             "",
-            "No trust cards found locally.",
-            `- \`/bridge-trust queue <plugin>\` request a review`,
+            "No trust cards found locally. This checkout has no `docs/catalog/cards/`",
+            "directory, so the bridge has nothing to read - it does not mean zero",
+            "plugins have been audited upstream.",
+            "",
+            "Next:",
+            "- `/bridge-browse` see the catalog index, which carries grades of its own",
+            "- `/bridge-trust scan <directory>` grade a local directory yourself, offline",
+            "- `/bridge-trust queue <plugin>` request a maintainer review",
             "",
         ].join("\n");
     }
     const rows = files.map((file) => {
         const slug = file.slice(0, -3);
         const markdown = readFileSync(join(dir, file), "utf8");
-        return [slug, gradeFromCard(markdown) ?? "-"];
+        return [slug, gradeCell(gradeFromCard(markdown))];
     });
     return [
         "### Reviewed plugins",
@@ -155,12 +162,18 @@ export function renderScanSummary(ctx, target, report) {
         "",
         ctx.output.card("LOCAL SCAN", [
             ["target", target],
-            ["grade", report.grading.grade],
+            ["grade", gradeLabel(report.grading.grade)],
             ["score", String(report.grading.score)],
         ]),
         "",
-        `Files scanned: ${report.stats.filesScanned} (${report.stats.filesSkipped} skipped, ${report.stats.bytesScanned} bytes)`,
-        `Findings: critical ${counts.critical} · high ${counts.high} · medium ${counts.medium} · low ${counts.low} · info ${counts.info}`,
+        `Files scanned: ${report.stats.filesScanned} (${report.stats.filesSkipped} skipped)`,
+        // Counts render as a table, worst-first, and only for severities that
+        // actually fired: a clean scan must not print a [CRITICAL] badge next to a
+        // zero. Empty input makes table() return "", which drops the section.
+        ctx.output.table(["SEVERITY", "COUNT"], [...SEVERITIES]
+            .reverse()
+            .filter((severity) => counts[severity] > 0)
+            .map((severity) => [ctx.output.badge(severity), String(counts[severity])])),
         "",
     ];
     if (report.findings.length > 0) {
@@ -169,7 +182,7 @@ export function renderScanSummary(ctx, target, report) {
         parts.push(ctx.output.table(["SEVERITY", "RULE", "LOCATION", "MESSAGE"], ordered.slice(0, 5).map((f) => [ctx.output.badge(f.severity), f.ruleId, `${f.path}:${f.line}`, f.message])));
     }
     else {
-        parts.push("No findings in scanned surface. Absence of findings is not a safety guarantee.", "");
+        parts.push("No findings in scanned surface. Absence of findings is not a safety guarantee:", `the scanner read ${report.stats.filesScanned} file(s) and skipped ${report.stats.filesSkipped}, and it`, "cannot see runtime behavior, network destinations, or anything a build step", "generates later. Read the source before you trust it.", "");
     }
     parts.push(`Rules digest: \`${report.rulesDigest.slice(0, 16)}\` (scanner ${report.scannerVersion})`, "");
     return parts.join("\n");

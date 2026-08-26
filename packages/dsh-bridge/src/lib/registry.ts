@@ -6,6 +6,7 @@
  * land. Rows are ordered by group exactly as /bridge-help renders them.
  */
 
+import { normalizeSpacing } from "./output.js";
 import type { CommandResult } from "./types.js";
 import type { BridgeContext } from "./types.js";
 
@@ -48,17 +49,31 @@ type CommandRunner = (
   args: Readonly<Record<string, string>>,
 ) => Promise<CommandResult>;
 
+/**
+ * Wrap a runner so its markdown passes through `normalizeSpacing`. Applied to
+ * every row below, so vertical rhythm is a property of the command surface
+ * rather than something each of the 17 modules has to remember. `data` rides
+ * through untouched.
+ */
+function normalized(run: CommandRunner): CommandRunner {
+  return async (ctx, args) => {
+    const result = await run(ctx, args);
+    const markdown = normalizeSpacing(result.markdown);
+    return result.data === undefined ? { markdown } : { markdown, data: result.data };
+  };
+}
+
 /** Rows are ordered by group exactly as /bridge-help will render them. */
 export function bridgeCommandTable(ctx: BridgeContext): readonly BridgeCommand[] {
   void ctx;
-  return Object.freeze([
+  return Object.freeze(([
     {
       name: "bridge-help",
       aliases: [],
       summary: "List every bridge command plus native DSH commands kept as-is",
       usage: "[command]",
       // MOUNT(help): src/commands/help.ts implements this per docs/specs/commands/help.md.
-      run: (ctx, args) => renderHelp(ctx, args, bridgeCommandTable(ctx)),
+      run: ((ctx, args) => renderHelp(ctx, args, bridgeCommandTable(ctx))) as CommandRunner,
     },
     {
       name: "bridge-connect",
@@ -188,5 +203,5 @@ export function bridgeCommandTable(ctx: BridgeContext): readonly BridgeCommand[]
       // MOUNT(refactor): src/commands/refactor.ts implements this per docs/specs/commands/refactor.md.
       run: runRefactor,
     },
-  ]);
+  ] satisfies readonly BridgeCommand[]).map((row) => ({ ...row, run: normalized(row.run) })));
 }

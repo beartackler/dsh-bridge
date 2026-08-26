@@ -12,7 +12,6 @@
 [![CI](https://github.com/beartackler/dsh-bridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/beartackler/dsh-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](packages/dsh-bridge/package.json)
-[![Built by agent swarm, human reviewed](https://img.shields.io/badge/build-agent%20swarm%2C%20human%20reviewed-lightgrey)](#provenance)
 
 ![dsh-bridge connectors flow: credential detection resolves into a masked detection matrix, then a trust report card for @liustack/modlens showing grade B with file-and-line evidence.](site/demo/connect-demo.gif)
 
@@ -114,6 +113,6 @@ Under active development. Research and audit artifacts land in `docs/` as they a
 
 ## Provenance
 
-Built by a mixed-model agent swarm (ox-alpha and Claude Opus 5) under human review. We say so because a trust product that hides its provenance has no business asking for yours.
+Cross-reviewed by design: adversarial reviews are performed by models that did not write the artifact under review. Quality gates are documented in CONTRIBUTING.md.
 
 Not affiliated with DeepSeek. Built on their MIT-licensed groundwork with gratitude.

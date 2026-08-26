@@ -182,7 +182,8 @@ describe("trust scan (scan-client mock)", () => {
     assert.ok(markdown.includes("### Scan summary"));
     assert.match(markdown, /grade:\s+A\b/);
     assert.ok(markdown.includes("No findings in scanned surface."));
-    assert.ok(!markdown.includes("[CRITICAL]"));
+    assert.ok(!markdown.includes("[CRITICAL]"), "a clean scan never prints a critical badge");
+    assert.ok(!markdown.includes("| SEVERITY | COUNT |"), "no all-zero counts table on a clean scan");
   });
 
   it("orders mixed-severity findings worst-first with badges", () => {
@@ -194,7 +195,8 @@ describe("trust scan (scan-client mock)", () => {
     assert.ok(markdown.indexOf("[CRITICAL]") !== -1, "worst finding must be badged");
     assert.ok(markdown.indexOf("[CRITICAL]") < markdown.indexOf("[ LOW ]"), "sorted worst-first");
     assert.ok(markdown.includes("Top findings:"));
-    assert.ok(markdown.includes("Findings: critical 1"));
+    assert.match(markdown, /\|\s*\[CRITICAL\]\s*\|\s*1\s*\|/, "severity counts render as a table");
+    assert.ok(!markdown.includes("[ HIGH ]"), "severities that never fired are not listed");
   });
 });
 

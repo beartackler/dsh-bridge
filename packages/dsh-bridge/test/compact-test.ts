@@ -180,10 +180,12 @@ describe("compact with a native hook", () => {
     assert.match(result.markdown, /the auth decisions/);
   });
 
-  it("returns the native string verbatim when nothing is compactable", async () => {
+  it("explains why nothing was compactable, and points at status", async () => {
     const { hooks } = fakeHooks({ result: null, measurements: [{ totalTokens: 5 }] });
     const result = await runCompact(contextWith(hooks), {});
-    assert.equal(result.markdown, "No compactable history yet.");
+    assert.match(result.markdown, /^### \/bridge-compact$/m);
+    assert.match(result.markdown, /No compactable history yet\./);
+    assert.match(result.markdown, /\/bridge-compact status/, "empty state must offer a next step");
     assert.equal((result.data as { compacted: boolean }).compacted, false);
   });
 

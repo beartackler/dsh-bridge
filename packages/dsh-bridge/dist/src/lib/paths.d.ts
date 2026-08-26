@@ -48,7 +48,7 @@ export declare function projectEnvPath(cwd?: string): string;
 export declare function probeJsonSource(path: string, requiredKeys: readonly string[]): SourceProbe;
 /**
  * Probe an environment variable source. Returns presence plus a masked
- * display value per connect spec S1: `prefix…last4`, or `…` alone when the
+ * display value per connect spec S1: `prefix...last4`, or `...` alone when the
  * value is shorter than 12 characters. The full value never leaves this call.
  */
 export declare function probeEnvVar(name: string, env?: Readonly<Record<string, string | undefined>>): {
@@ -56,6 +56,10 @@ export declare function probeEnvVar(name: string, env?: Readonly<Record<string, 
     present: boolean;
     masked: string;
 };
-/** Connect spec S1 mask: `prefix(s)…last4(s)`; values under 12 chars render as `…`. */
+/**
+ * Connect spec S1 mask: `prefix...last4`; values under 12 chars render as
+ * `...` alone. ASCII by construction - the mask is rendered into command
+ * output, which output.ts requires to survive being piped into `less`.
+ */
 export declare function maskSecret(value: string): string;
 //# sourceMappingURL=paths.d.ts.map

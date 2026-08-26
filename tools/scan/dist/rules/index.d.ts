@@ -6,13 +6,17 @@
  * across machines — the card records which corpus produced it.
  */
 import { credentialAccessRule } from "./credential-access.js";
+import { credentialCliHarvestRule } from "./credential-cli-harvest.js";
 import { dynamicEvalRule } from "./dynamic-eval.js";
 import { lifecycleHooksRule } from "./lifecycle-hooks.js";
+import { manifestSupplyRiskRule } from "./manifest-supply-risk.js";
 import { networkEgressRule } from "./network-egress.js";
 import { obfuscationRule } from "./obfuscation.js";
+import { shellInvocationRule } from "./shell-invocation.js";
+import { telemetryBeaconsRule } from "./telemetry-beacons.js";
 import { type Rule } from "./types.js";
 export * from "./types.js";
-export { credentialAccessRule, dynamicEvalRule, lifecycleHooksRule, networkEgressRule, obfuscationRule, };
+export { credentialAccessRule, credentialCliHarvestRule, dynamicEvalRule, lifecycleHooksRule, manifestSupplyRiskRule, networkEgressRule, obfuscationRule, shellInvocationRule, telemetryBeaconsRule, };
 /** All rules, sorted by id for determinism. */
 export declare const ALL_RULES: readonly Rule[];
 /**

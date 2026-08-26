@@ -63,10 +63,27 @@ export async function renderHelp(
 ): Promise<CommandResult> {
   void ctx;
   if (commands.length === 0) {
-    return { markdown: "No bridge commands are registered in this session.\n" };
+    return {
+      markdown: [
+        "## dsh-bridge commands",
+        "",
+        "No bridge commands are registered in this session. The plugin loaded but",
+        "its registry mounted nothing, which usually means the `commands` service",
+        "was unavailable when `apply(ctx)` ran.",
+        "",
+        "Check the mount:",
+        "",
+        "- `dsh --profile <name> --dump-config` and look for a `# == dsh-bridge` marker",
+        "- if the marker is absent the bundle never composed a layer; reinstall with",
+        "  `dsh plugin --profile <name> add dsh-bridge`",
+        "",
+      ].join("\n"),
+    };
   }
 
-  const blocks: string[] = ["### dsh-bridge commands", "Usage: /bridge-help [command]"];
+  // H2 for the page title, H3 for each group: one level of nesting, so the
+  // section rule in every command body stays "### is a section, ## is a page".
+  const blocks: string[] = ["## dsh-bridge commands", "Usage: /bridge-help [command]"];
 
   const grouped = new Set<BridgeCommand>();
   for (const [title, names] of GROUPS) {

@@ -560,17 +560,22 @@ function renderImport(plan) {
         return { markdown: markdown.join("\n") };
     }
     markdown.push(table(["SOURCE NAME", "DECISION", "DETAIL"], rows));
-    const mappingRows = [
-        ["object key", "serverName", "normalize .:/space to '-', truncate to 32, suffix '-2' on collision"],
-        ['type "stdio" (or absent + command)', 'transport: stdio', "direct"],
-        ['type "http"', "transport: streamable-http", "direct"],
-        ['type "sse"', "-", "unsupported; skip row emitted"],
-        ["command / args / cwd", "same fields", "verbatim"],
-        ["env / headers", "env / headers", "secret values become !!js process.env.<KEY> references"],
-        ["disabled: true", "-", "skip (disabled upstream)"],
-    ];
-    markdown.push("", "Conversion mapping (Claude Code -> DSH):");
-    markdown.push(table(["CLAUDE FIELD", "DSH FIELD", "RULE"], mappingRows));
+    // The mapping table explains the DECISION column above, so it is printed
+    // only when there is a decision to explain. With zero servers found it is
+    // reference material nobody asked for (CHARTER: delete before add).
+    if (rows.length > 0) {
+        const mappingRows = [
+            ["object key", "serverName", "normalize .:/space to '-', truncate to 32, suffix '-2' on collision"],
+            ['type "stdio" (or absent + command)', 'transport: stdio', "direct"],
+            ['type "http"', "transport: streamable-http", "direct"],
+            ['type "sse"', "-", "unsupported; skip row emitted"],
+            ["command / args / cwd", "same fields", "verbatim"],
+            ["env / headers", "env / headers", "secret values become !!js process.env.<KEY> references"],
+            ["disabled: true", "-", "skip (disabled upstream)"],
+        ];
+        markdown.push("", "Conversion mapping (Claude Code -> DSH):");
+        markdown.push(table(["CLAUDE FIELD", "DSH FIELD", "RULE"], mappingRows));
+    }
     if (plan.notCarriedOver.length > 0) {
         markdown.push("Not carried over:", bulletListOf(plan.notCarriedOver));
     }

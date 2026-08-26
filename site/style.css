@@ -230,6 +230,25 @@ code,
   margin-top: var(--s-4);
 }
 
+/* ------------------------------------------------------- grade strip */
+
+.grade-strip-section {
+  padding-block: 0 var(--s-5);
+}
+
+.grade-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* Strip chips reuse the filter chip system: same pressed treatment, same
+   per-grade --g binding as the legend and table badges. */
+.grade-chip {
+  font-size: 0.9375rem;
+}
+
 /* ------------------------------------------------------- controls (sticky) */
 
 .controls {

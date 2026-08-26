@@ -414,6 +414,9 @@ export function parseImproveArgs(args: Readonly<Record<string, string>>): Improv
   };
 }
 
+/** Usage line, matching the registry row for this command exactly. */
+const USAGE = "Usage: /bridge-improve [<path>] [--diff] [--limit <n>]";
+
 export class ImproveError extends Error {}
 
 /** Run the audit over resolved options. Throws ImproveError for user errors. */
@@ -494,8 +497,14 @@ export function renderImproveReport(report: ImproveReport): string {
   const removable = report.findings.reduce((sum, finding) => sum + finding.removableLines, 0);
 
   if (report.findings.length === 0) {
-    const tail = report.skipped.length > 0 ? `\nNot audited: ${renderSkipped(report.skipped)}` : "";
-    return `No findings. Audited ${fileCount} files, ${lineCount} lines.${tail}`;
+    const lines = [
+      heading("/bridge-improve"),
+      `No findings. Audited ${fileCount} files, ${lineCount} lines.`,
+      "The detectors this command runs found nothing to cut. They look for dead",
+      "values and mechanical redundancy only, so a clean result is not a review.",
+    ];
+    if (report.skipped.length > 0) lines.push(`Not audited: ${renderSkipped(report.skipped)}`);
+    return lines.join("\n");
   }
 
   const rows = report.findings.map((finding) => [
@@ -601,7 +610,14 @@ export async function runImprove(
       },
     };
   } catch (error) {
-    if (error instanceof ImproveError) return { markdown: error.message };
+    // User errors render in the same shape as every other command body: a
+    // heading, the specific problem, then the usage line. Returning a bare
+    // sentence made /bridge-improve the only command whose error had no header.
+    if (error instanceof ImproveError) {
+      return {
+        markdown: [heading("/bridge-improve"), error.message, "", USAGE, ""].join("\n"),
+      };
+    }
     throw error;
   }
 }

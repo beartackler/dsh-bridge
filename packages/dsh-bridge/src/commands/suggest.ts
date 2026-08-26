@@ -17,7 +17,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 
-import { bulletList, heading, table } from "../lib/output.js";
+import { bulletList, gradeCell, heading, table } from "../lib/output.js";
 import type { CommandResult } from "../lib/types.js";
 
 import {
@@ -229,7 +229,7 @@ export async function runSuggest(
       `Idea: ${idea}`,
       "",
       `Closest existing plugin covers ${Math.round(best.coverage * 100)}% of your intent:`,
-      table(["GRADE", "PLUGIN", "DESCRIPTION"], [[grade ?? "?", best.entry.name, best.entry.description]]),
+      table(["GRADE", "PLUGIN", "DESCRIPTION"], [[gradeCell(grade), best.entry.name, best.entry.description]]),
       gapNote,
       "",
       "Install:",

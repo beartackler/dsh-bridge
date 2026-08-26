@@ -79,6 +79,10 @@ between calls.
 | `credential-access` | `CRED` | high | `~/.claude`, `~/.codex`, OpenCode `auth.json`, `~/.ssh`, `~/.aws`, `.env` reads, OS keychains, `~/.dsh` profile storage, bulk `process.env` enumeration including the computed `process["env"]` form, and undocumented string-keyed `process` members. |
 | `lifecycle-hooks` | `HOOK` | medium | npm `preinstall`/`install`/`postinstall`/`prepare` scripts (parsed from `package.json`, severity raised when the command spawns a shell), process-lifecycle handlers, top-level timers and IIFEs, runtime `npm`/`npx` invocation. Runtime-only: CI workflows and docs are out of scope. |
 | `obfuscation` | `OBFU` | medium | High-entropy encoded blobs (Shannon ≥ 4.2 bits/char, with a low-severity second tier at 48 chars), decode-then-`eval` chains both adjacent and **staged through variables**, obfuscator.io `_0x` identifiers and string-array rotation, zero-width/bidi characters, Latin↔Cyrillic homoglyph identifiers, hex-escaped member access. |
+| `telemetry-beacons` | `PRIV` | high | Telemetry and tracking: analytics SDK imports (`posthog`, Sentry, Mixpanel, Amplitude, Segment), known collector endpoints (Baidu Tongji, Google Analytics, Matomo, Plausible, Sentry ingest), generic `/telemetry` `/collect` `/beacon` upload paths on arbitrary hosts, and `navigator.sendBeacon`. Docs files are out of scope; example hosts and loopback collectors are filtered. |
+| `shell-invocation` | `EXEC` | high | Shell-mediated execution shapes rather than spawn call sites: PowerShell `-enc`/`-Command`, command-string `sh -c` (quoted or argv form), `cmd.exe /c|/k`, `{ shell: true }`, and `osascript -e`. Array-argv spawns of fixed binaries stay quiet; CI workflows and docs are out of scope. |
+| `credential-cli-harvest` | `CRED` | high | Credential access performed through subprocesses instead of fs APIs: silent `gh auth token` adoption (shell or argv form), `printenv`/`env` dumps via exec-family calls, `sshpass -p` inline passwords, and `cat` over `.env`-style files. `#` comments in YAML/shell are masked first. |
+| `manifest-supply-risk` | `SUPPLY` | medium | Manifest-level supply-chain risk in `package.json`: dependencies pinned to git hosts or tarball URLs (mutable sources that resolve at click time) at high, and install-time native-binary fetchers (`prebuild-install`, `node-gyp`, `node-pre-gyp`, `prebuildify`) at medium. Applies only to manifests. |
 
 Detector IDs, so a finding on a card can be traced back to its rationale:
 
@@ -105,6 +109,23 @@ Detector IDs, so a finding on a card can be traced back to its rationale:
 | `OBFU-010` | medium | A decode call anywhere in a module that also executes code or performs network I/O. Adjacency is not required. |
 | `OBFU-011` | low | Unicode line separator (U+2028/U+2029). Separated from the bidi-override case, which stays high. |
 | `OBFU-012` | low | High-entropy literal between 48 and 120 chars inside a decoding or executing module: split-payload evidence. |
+| `PRIV-001` | high | Imports a telemetry/analytics SDK. |
+| `PRIV-002` | high | References a third-party analytics-collector endpoint (Baidu Tongji, GA, Sentry ingest, PostHog, Mixpanel, Amplitude). |
+| `PRIV-003` | medium | Upload path shaped like a telemetry collector (`/telemetry`, `/collect`, `/beacon`, `/analytics`) on an arbitrary host. |
+| `PRIV-004` | medium | `navigator.sendBeacon()`: unload-safe tracking request. |
+| `EXEC-020` | critical | PowerShell `-enc`/`-EncodedCommand`: base64 payload unreadable at the call site. |
+| `EXEC-021` | high | Command-string or argv-form `sh -c`: anything interpolated into it executes. |
+| `EXEC-022` | high | Spawn option `{ shell: true }`: arguments lose their quoting guarantees. |
+| `EXEC-023` | high | `osascript -e` AppleScript execution. |
+| `EXEC-024` | high | PowerShell `-Command` inline script. |
+| `EXEC-026` | high | `cmd.exe /c|/k`: the following string runs as a Windows batch command. |
+| `CRED-020` | high | Silent `gh auth token` invocation: adopts the user's GitHub CLI identity. |
+| `CRED-021` | high | Environment dump via subprocess (`exec("printenv")` family), bypassing `process.env` detectors. |
+| `CRED-022` | high | `sshpass -p`: password exposed as a command-line argument. |
+| `CRED-023` | medium | `cat` over a `.env`-style file: plaintext secrets read through the shell. |
+| `SUPPLY-010` | high | Dependency pinned to a git host (`github:` or `git+...`): resolves to moving HEAD at install time. |
+| `SUPPLY-011` | high | Dependency fetched as a tarball URL: bytes are whatever the host serves at install time. |
+| `SUPPLY-012` | medium | Native-build tooling declared (`prebuild-install`, `node-gyp`, `node-pre-gyp`, `prebuildify`): install-time binary fetch/build surface. |
 | `SUPPLY-000` | low | A rule crashed on a file; it was not fully analyzed. |
 | `SUPPLY-001` | high | A file exceeded the scan limit and its contents were not read at all. |
 
@@ -194,12 +215,13 @@ trust layer:
 src/
   index.ts            directory walk + CLI (exit codes for CI)
   report.ts           grading, canonical JSON, markdown card
-  self-test.ts        node:test suite (90 tests)
+  self-test.ts        node:test suite (114 tests)
   rules/
     types.ts          Rule/Finding types, comment masking, line index, detector driver
     index.ts          registry + corpus digest
     dynamic-eval.ts   credential-access.ts   lifecycle-hooks.ts
-    network-egress.ts obfuscation.ts
+    network-egress.ts obfuscation.ts         telemetry-beacons.ts
+    shell-invocation.ts credential-cli-harvest.ts manifest-supply-risk.ts
 ```
 
 MIT.

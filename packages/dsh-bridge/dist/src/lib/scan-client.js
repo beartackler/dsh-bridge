@@ -109,7 +109,7 @@ function tail(text) {
     const trimmed = text.trim();
     if (trimmed.length <= 400)
         return trimmed;
-    return `…${trimmed.slice(-399)}`;
+    return `...${trimmed.slice(-397)}`;
 }
 function isRecord(value) {
     return typeof value === "object" && value !== null;

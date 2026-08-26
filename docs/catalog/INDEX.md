@@ -74,7 +74,16 @@ Star-count note: numbers come from the upstream star snapshot behind [docs/catal
 
 ## Requesting a review
 
-Open a GitHub issue against this repository with: the plugin's repository URL, the exact version or commit you run, your install channel, and a one-line description of what the plugin claims to do. We pin a commit and grade that revision only; reviews proceed in submission order.
+## Requesting a review
+
+You do not need us to vet a plugin. Run the scanner yourself, on your machine, against any plugin you are considering:
+
+```bash
+dsh plugin --profile web add github:<author>/<plugin>   # install as usual
+npx @dsh-bridge/scan ~/.dsh/profiles/web/plugins/<plugin>   # static audit, evidence cited
+```
+
+The scanner prints findings with file-and-line references and a draft grade. If a plugin you want is not in this catalog and the existing cards do not cover it, audit it with the scanner and treat that as your answer; if you build something better than our cards, open a PR and we will take it. Reviews of new plugins proceed the same way: an agent or a person runs the same scanner, reads the source, and writes the card. Nothing about the process requires trusting us.
 
 ## Re-verifying a result yourself
 

@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { ALL_RULES, SEVERITIES, credentialAccessRule, dynamicEvalRule, lifecycleHooksRule, maskComments, networkEgressRule, obfuscationRule, rulesDigest, sha256, } from "./rules/index.js";
+import { ALL_RULES, SEVERITIES, credentialAccessRule, credentialCliHarvestRule, dynamicEvalRule, lifecycleHooksRule, manifestSupplyRiskRule, maskComments, networkEgressRule, obfuscationRule, rulesDigest, sha256, shellInvocationRule, telemetryBeaconsRule, } from "./rules/index.js";
 import { canonicalJson, grade, toJsonReport, toMarkdownReport } from "./report.js";
 import { parseArgs, scanContent, scanDirectory } from "./index.js";
 /** Positive fixture must fire; negative fixture must not. Both per the rule-corpus spec. */
@@ -50,6 +50,30 @@ const FIXTURES = [
         positive: 'const _0x4f2a = ["log"]; eval(atob("Y29uc29sZS5sb2coMSk="));',
         negative: 'const messages = ["ready", "done"];\nexport default messages;\n',
     },
+    {
+        rule: telemetryBeaconsRule,
+        path: "src/client.js",
+        positive: 'import { PostHog } from "posthog-node";\nnavigator.sendBeacon("https://dsh-market.com/api/telemetry/event", payload);\n',
+        negative: 'const label = "telemetry is documented in docs/telemetry.md";\nexport default label;\n',
+    },
+    {
+        rule: shellInvocationRule,
+        path: "lib/capture.js",
+        positive: 'spawn("powershell.exe", ["-enc", body]);\nspawnSync(cmdPath, ["/d", "/s", "/c", line], { shell: true });\n',
+        negative: 'spawnSync(tesseract, [image, "stdout"], { shell: false });\nconst advice = "run it with sh -c yourself";\n',
+    },
+    {
+        rule: credentialCliHarvestRule,
+        path: "src/gist.ts",
+        positive: 'execFileSync("gh", ["auth", "token"]);\nexecSync("printenv");\n',
+        negative: 'const token = process.env.GITHUB_TOKEN;\nspawnSync("git", ["status"]);\n',
+    },
+    {
+        rule: manifestSupplyRiskRule,
+        path: "package.json",
+        positive: '{ "dependencies": { "left-pad": "github:user/left-pad", "native-dep": "https://cdn.example.com/native-dep-1.0.0.tgz" }, "devDependencies": { "prebuild-install": "^7.0.0" } }',
+        negative: '{ "dependencies": { "left-pad": "^1.3.0", "sharp": "0.33.0" }, "scripts": { "test": "node --test" } }',
+    },
 ];
 describe("rule contract", () => {
     for (const rule of ALL_RULES) {
@@ -63,14 +87,18 @@ describe("rule contract", () => {
             assert.equal(rule.match.length, 2, "match(content, filePath)");
         });
     }
-    it("registry contains the five required rules", () => {
+    it("registry contains the required rules", () => {
         const ids = ALL_RULES.map((r) => r.id).sort();
         assert.deepEqual(ids, [
             "credential-access",
+            "credential-cli-harvest",
             "dynamic-eval",
             "lifecycle-hooks",
+            "manifest-supply-risk",
             "network-egress",
             "obfuscation",
+            "shell-invocation",
+            "telemetry-beacons",
         ]);
     });
     it("rulesDigest is stable and content-derived", () => {
@@ -553,6 +581,116 @@ describe("self-audit bypass regressions", () => {
                 '  ctx.commands.register({ name: "starter-ping", description: "Reply with pong.", handler: () => ({ kind: "success" }) });\n' +
                 '}\n';
             assert.deepEqual(scanContent(plugin, "src/index.ts"), []);
+        });
+    });
+});
+describe("season-two corpus: manual-audit regressions", () => {
+    const ids = (findings) => findings.map((f) => f.id);
+    describe("PRIV: unoptoutable telemetry (manual find in dsh-web / desktop-cc-gui)", () => {
+        const heartbeat = 'const ENDPOINT = "https://dsh-market.com/api/telemetry/event";\n' +
+            'export function send() { return fetch(ENDPOINT, { method: "POST", body }); }\n';
+        it("names a collector-path heartbeat as PRIV evidence", () => {
+            const findings = telemetryBeaconsRule.match(heartbeat, "shared/client/telemetry.ts");
+            const hit = findings.find((f) => f.id === "PRIV-003");
+            assert.ok(hit, "collector-path heartbeat not detected");
+            assert.equal(hit?.family, "PRIV");
+        });
+        it("flags known analytics endpoints and SDK imports", () => {
+            const baidu = telemetryBeaconsRule.match('loadScript("https://hm.baidu.com/hm.js?abc123");\n', "src/main.ts");
+            assert.ok(baidu.some((f) => f.id === "PRIV-002"), "baidu endpoint missed");
+            for (const spec of [
+                ['import posthog from "posthog";', "src/a.ts"],
+                ['import * as Sentry from "@sentry/node";', "src/a.ts"],
+                ['const client = require("mixpanel");', "src/a.js"],
+            ]) {
+                const findings = telemetryBeaconsRule.match(spec[0] + "\n", spec[1]);
+                assert.ok(findings.some((f) => f.id === "PRIV-001"), `${spec[0]} not detected`);
+            }
+        });
+        it("stays quiet on documentation mentions, example hosts, and loopback collectors", () => {
+            const benign = [
+                'export const DOC = "see https://example.com/analytics for our privacy policy";',
+                'const localCollector = "http://127.0.0.1:9000/collect";',
+                '// this module intentionally ships no telemetry beacon of any kind',
+                "export const ok = 1;",
+            ].join("\n");
+            assert.deepEqual(telemetryBeaconsRule.match(benign, "src/client.js"), []);
+            assert.deepEqual(telemetryBeaconsRule.match(benign, "docs/explainer.md"), []);
+        });
+    });
+    describe("EXEC: command-string shells (vision-router VR-EXEC shapes)", () => {
+        it("catches cmd.exe /c, sh -c, shell:true and PowerShell -enc", () => {
+            const src = [
+                'spawn("cmd.exe", ["/d", "/s", "/c", `start "" "${dir}"`]);',
+                'exec(`${open} ${logDir} 2>/dev/null || sh -c "xdg-open ${logDir}"`);',
+                'spawn(node, argv, { shell: true });',
+                'execFile("powershell.exe", ["-enc", b64]);',
+            ].join("\n");
+            const found = ids(shellInvocationRule.match(src, "lib/file-logger.js"));
+            assert.ok(found.includes("EXEC-026"), "cmd.exe /c missed");
+            assert.ok(found.includes("EXEC-021"), "sh -c missed");
+            assert.ok(found.includes("EXEC-022"), "shell:true missed");
+            assert.ok(found.includes("EXEC-020"), "powershell -enc missed");
+        });
+        it("escalates powershell -enc to critical", () => {
+            const findings = shellInvocationRule.match('exec("powershell -enc " + payload);\n', "lib/win.js");
+            const hit = findings.find((f) => f.id === "EXEC-020");
+            assert.equal(hit?.severity, "critical");
+        });
+        it("does not flag array-argv spawns, shell:false, or quoted help text", () => {
+            const benign = [
+                'spawnSync("tesseract", [img, "stdout"], { shell: false });',
+                'execFile(screencapture, [tmpPng], { timeout: 5000 });',
+                'const hint = "if that fails, run it with sh -c manually";',
+            ].join("\n");
+            assert.deepEqual(shellInvocationRule.match(benign, "src/ok.js"), []);
+        });
+    });
+    describe("CRED: CLI-based credential access (dsh-market MKT-CRED-2 shape)", () => {
+        it("detects silent gh auth token adoption", () => {
+            const src = 'function ghToken() { return execFileSync("gh", ["auth", "token"], { encoding: "utf8" }).trim(); }\n';
+            const findings = credentialCliHarvestRule.match(src, "src/gist.ts");
+            const hit = findings.find((f) => f.id === "CRED-020");
+            assert.ok(hit, "gh auth token missed");
+            assert.equal(hit?.severity, "high");
+        });
+        it("detects env dumps via subprocess and inline sshpass passwords", () => {
+            const dump = credentialCliHarvestRule.match('exec("printenv", cb);\n', "lib/hooks.js");
+            assert.ok(dump.some((f) => f.id === "CRED-021"), "printenv dump missed");
+            const sshpass = credentialCliHarvestRule.match('exec(`sshpass -p ${pw} rsync -a ./ $host:/srv`)\n', "deploy/sync.sh");
+            assert.ok(sshpass.some((f) => f.id === "CRED-022"), "sshpass -p missed");
+        });
+        it("does not flag named env reads or ordinary git spawns", () => {
+            const benign = [
+                'const token = process.env.DSH_GITHUB_TOKEN;',
+                'execSync("git status --porcelain");',
+                'spawnSync("gh", ["pr", "view", "--json", "number"]);',
+            ].join("\n");
+            assert.deepEqual(credentialCliHarvestRule.match(benign, "src/ok.ts"), []);
+        });
+    });
+    describe("SUPPLY: mutable dependency pins and native-binary fetchers (H-PKG-03/H-HOOK-04)", () => {
+        it("flags github:/git+ pins and tarball URLs at high severity", () => {
+            const pkg = JSON.stringify({
+                dependencies: { widget: "github:evil/widget", other: "git+ssh://git@github.com/evil/other.git#main" },
+            });
+            const found = manifestSupplyRiskRule.match(pkg, "package.json");
+            assert.equal(found.filter((f) => f.id === "SUPPLY-010").length, 2, "git pins missed");
+            assert.ok(found.every((f) => f.severity === "high"));
+            const tarball = manifestSupplyRiskRule.match('{ "deps": { "x": "https://cdn.example.com/x-1.0.0.tgz" } }', "package.json");
+            assert.ok(tarball.some((f) => f.id === "SUPPLY-011"), "tarball pin missed");
+        });
+        it("flags native-binary fetch tooling at medium", () => {
+            const pkg = '{ "devDependencies": { "node-gyp": "10.0.0" }, "dependencies": { "prebuild-install": "^7" } }';
+            const found = manifestSupplyRiskRule.match(pkg, "package.json");
+            const hits = found.filter((f) => f.id === "SUPPLY-012");
+            assert.equal(hits.length, 2, "native fetchers missed");
+            assert.ok(hits.every((f) => f.severity === "medium"));
+        });
+        it("does not flag registry-pinned versions or non-manifest files", () => {
+            const clean = JSON.stringify({ dependencies: { sharp: "0.33.0", cordis: "4.0.0" } });
+            assert.deepEqual(manifestSupplyRiskRule.match(clean, "package.json"), []);
+            assert.deepEqual(manifestSupplyRiskRule.match('const dep = "github:a/b";\n', "src/deps.js"), []);
         });
     });
 });

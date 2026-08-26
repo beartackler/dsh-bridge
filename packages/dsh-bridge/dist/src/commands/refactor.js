@@ -569,7 +569,7 @@ function renderPlanOnly(target, inventory, steps, notes, loadedFrom) {
         ])));
     }
     if (steps.length === 0) {
-        parts.push("No mechanical steps proposed for this target.");
+        parts.push("No mechanical steps proposed for this target. Every step this command emits", "must be verifiable by re-running the tests, so it proposes only moves it can", "prove: extractions, renames, and file splits it recognized structurally.", "", "That found nothing here. Either the target is already factored, or the change", "you want is a judgement call rather than a mechanical one - describe it to the", "agent directly instead.");
     }
     else {
         parts.push(`Proposed steps (${steps.length}):`, "");

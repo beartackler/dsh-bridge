@@ -20,6 +20,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { gradeCell } from "../lib/output.js";
 import type { CommandResult } from "../lib/types.js";
 
 /** Default page size for list rendering (browse spec section 3.1). */
@@ -656,7 +657,7 @@ export async function runBrowse(
     // English line preferred (spec 3.2); the Chinese line appears only when
     // no English one exists, instead of rendering an empty cell.
     const description = entry.description !== "" ? entry.description : entry.descriptionZh;
-    return [resolveGrade(entry, grades) ?? "?", entry.name, entry.category, starsCell(entry.stars), clip(description)];
+    return [gradeCell(resolveGrade(entry, grades)), entry.name, entry.category, starsCell(entry.stars), clip(description)];
   });
 
   const activeFilters: string[] = [];

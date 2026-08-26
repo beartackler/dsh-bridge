@@ -199,7 +199,7 @@ export async function scanDirectory(targetDir: string, options: ScanClientOption
 function tail(text: string): string {
   const trimmed = text.trim();
   if (trimmed.length <= 400) return trimmed;
-  return `…${trimmed.slice(-399)}`;
+  return `...${trimmed.slice(-397)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

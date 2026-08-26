@@ -16,7 +16,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { heading } from "../lib/output.js";
+import { gradeCell, heading } from "../lib/output.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 
 /** A catalog card older than this many days is stale (task + spec S5). */
@@ -330,8 +330,8 @@ export function renderStatus(ctx: BridgeContext, collected: CollectedStatus, ins
     blocks.push(`Stale cards (> ${STALE_AFTER_DAYS} days since verification):`, "");
     blocks.push(
       ctx.output.table(
-        ["PLUGIN", "GRADE", "VERIFIED"],
-        collected.staleCards.map((entry) => [entry.plugin, entry.grade, entry.verifiedOn ?? "?"]),
+        ["GRADE", "PLUGIN", "VERIFIED"],
+        collected.staleCards.map((entry) => [gradeCell(entry.grade), entry.plugin, entry.verifiedOn ?? "?"]),
       ),
     );
     blocks.push("Re-verify with /bridge-trust <plugin>.", "");

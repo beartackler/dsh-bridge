@@ -31,6 +31,12 @@
     <p id="meta" class="meta"></p>
   </section>
 
+  <section class="grade-strip-section" aria-label="Grade distribution">
+    <div class="wrap">
+      <div class="grade-strip" id="grade-strip"></div>
+    </div>
+  </section>
+
   <section class="controls" aria-label="Catalog filters">
     <form class="wrap controls-inner" id="filter-form" novalidate>
         <p class="search-field">
@@ -44,6 +50,14 @@
         <div class="select-field">
           <label for="category-select">Category</label>
           <select id="category-select"></select>
+        </div>
+        <div class="select-field">
+          <label for="sort-select">Sort</label>
+          <select id="sort-select">
+            <option value="grade">Grade</option>
+            <option value="stars">Stars</option>
+            <option value="date">Date</option>
+          </select>
         </div>
         <button type="button" class="chip chip-reset" id="clear-filters" hidden>Clear filters</button>
       </form>
@@ -100,8 +114,9 @@
     </dl>
     <p class="methodology">
       A grade is an evidence-backed opinion over one pinned commit as of its verified date. It is
-      not a safety guarantee and says nothing about any other version. Full methodology lives in
-      <a href="https://github.com/beartackler/dsh-bridge/blob/main/docs/trust/pipeline-architecture.md">docs/trust/pipeline-architecture.md</a>.
+      not a safety guarantee and says nothing about any other version. <a href="https://github.com/beartackler/dsh-bridge/blob/main/docs/trust/pipeline-architecture.md">How grading works</a>
+      (docs/trust/pipeline-architecture.md) covers the full pipeline: scanner rules, behavioral
+      probes, cross-model review, and the evidence standard behind each band.
       This site is static data from the repository; nothing here updates automatically.
     </p>
   </section>

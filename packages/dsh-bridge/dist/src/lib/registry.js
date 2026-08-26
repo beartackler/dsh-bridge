@@ -5,6 +5,7 @@
  * docs/specs/commands/*.md; remaining spec surface mounts here as modules
  * land. Rows are ordered by group exactly as /bridge-help renders them.
  */
+import { normalizeSpacing } from "./output.js";
 import { runConnect } from "../commands/connect.js";
 import { runBrowse } from "../commands/browse.js";
 import { runCompact } from "../commands/compact.js";
@@ -22,6 +23,19 @@ import { runReview } from "../commands/review.js";
 import { runStatus } from "../commands/status.js";
 import { runSuggest } from "../commands/suggest.js";
 import { runTrust } from "../commands/trust.js";
+/**
+ * Wrap a runner so its markdown passes through `normalizeSpacing`. Applied to
+ * every row below, so vertical rhythm is a property of the command surface
+ * rather than something each of the 17 modules has to remember. `data` rides
+ * through untouched.
+ */
+function normalized(run) {
+    return async (ctx, args) => {
+        const result = await run(ctx, args);
+        const markdown = normalizeSpacing(result.markdown);
+        return result.data === undefined ? { markdown } : { markdown, data: result.data };
+    };
+}
 /** Rows are ordered by group exactly as /bridge-help will render them. */
 export function bridgeCommandTable(ctx) {
     void ctx;
@@ -32,7 +46,7 @@ export function bridgeCommandTable(ctx) {
             summary: "List every bridge command plus native DSH commands kept as-is",
             usage: "[command]",
             // MOUNT(help): src/commands/help.ts implements this per docs/specs/commands/help.md.
-            run: (ctx, args) => renderHelp(ctx, args, bridgeCommandTable(ctx)),
+            run: ((ctx, args) => renderHelp(ctx, args, bridgeCommandTable(ctx))),
         },
         {
             name: "bridge-connect",
@@ -162,6 +176,6 @@ export function bridgeCommandTable(ctx) {
             // MOUNT(refactor): src/commands/refactor.ts implements this per docs/specs/commands/refactor.md.
             run: runRefactor,
         },
-    ]);
+    ].map((row) => ({ ...row, run: normalized(row.run) })));
 }
 //# sourceMappingURL=registry.js.map

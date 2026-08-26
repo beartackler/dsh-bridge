@@ -15,7 +15,7 @@
  * the grade verbatim from docs/catalog/cards.
  */
 import { readFileSync, readdirSync } from "node:fs";
-import { bulletList, heading, table } from "../lib/output.js";
+import { bulletList, gradeCell, heading, table } from "../lib/output.js";
 import { extractGrade, loadManifestCached, repoBase, resolveCatalogPaths, } from "../lib/catalog-access.js";
 const STOP_WORDS = new Set([
     "the", "a", "an", "to", "for", "of", "and", "or", "in", "on", "with", "my", "me", "i",
@@ -174,7 +174,7 @@ export async function runSuggest(ctx, args, options = {}) {
             `Idea: ${idea}`,
             "",
             `Closest existing plugin covers ${Math.round(best.coverage * 100)}% of your intent:`,
-            table(["GRADE", "PLUGIN", "DESCRIPTION"], [[grade ?? "?", best.entry.name, best.entry.description]]),
+            table(["GRADE", "PLUGIN", "DESCRIPTION"], [[gradeCell(grade), best.entry.name, best.entry.description]]),
             gapNote,
             "",
             "Install:",

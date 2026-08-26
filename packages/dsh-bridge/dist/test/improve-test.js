@@ -217,11 +217,13 @@ describe("improve audit", () => {
     });
 });
 describe("improve rendering", () => {
-    it("prints one line for an empty ledger", () => {
+    it("states the audited scope and the limits of a clean result", () => {
         const deps = memoryDeps({ "src/clean.ts": fixture("clean") });
         const report = auditTargets(deps, parseImproveArgs({ target: "src/clean.ts" }), "/repo");
         const markdown = renderImproveReport(report);
-        assert.equal(markdown, "No findings. Audited 1 files, 8 lines.");
+        assert.match(markdown, /^No findings\. Audited 1 files, 8 lines\.$/m);
+        assert.match(markdown, /not a review/, "a clean result must not read as an all-clear");
+        assert.ok(!markdown.includes("Not audited:"), "nothing was skipped in this fixture");
     });
     it("renders one row per finding with location, detector, cut and replacement", () => {
         const deps = memoryDeps({ "src/a.ts": fixture("todo-debt") });

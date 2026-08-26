@@ -56,9 +56,9 @@ The smallest set that makes a new DSH user say *"oh, it works like my old tool."
 
 ---
 
-## ⚠️ Honest disclosure
+## Provenance
 
-This entire project — code, specs, audits, and this roadmap — is built by a **swarm of AI coding agents** (mixed models, cross-reviewed by design), coordinated by humans. We think that's a feature: every artifact is reproducible from its spec, and adversarial reviews are done by models that didn't write the thing being reviewed. But you should know what you're starring. If agent-built tooling with human quality gates bothers you, this repo isn't pretending otherwise.
+Built by AI coding agents (mixed models, cross-reviewed by design) with human coordination. Adversarial reviews are done by models that did not write the thing being reviewed. Reproducible from specs; quality gates documented in CONTRIBUTING.md.
 
 ---
 

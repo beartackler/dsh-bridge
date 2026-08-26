@@ -11,7 +11,7 @@ const GRADE_PHRASES = {
 
 const GRADE_ORDER = ["A", "B", "C", "D", "F"];
 
-const state = { query: "", grade: "", category: "" };
+const state = { query: "", grade: "", category: "", sort: "grade" };
 
 let data = null;
 
@@ -35,6 +35,34 @@ function populateSelect(select, entries, key, allLabel) {
     // Zero-count grades stay listed so the full A-F scale remains visible.
     const phrase = key === "grade" ? ` - ${GRADE_PHRASES[value] || ""}` : "";
     select.append(el("option", { value }, `${value}${phrase} (${n})`));
+  }
+}
+
+function renderGradeStrip() {
+  const strip = document.getElementById("grade-strip");
+  if (!strip) return;
+  strip.textContent = "";
+  const dist = data.distribution || {};
+  for (const g of GRADE_ORDER) {
+    const n = dist[g] || countBy(data.plugins, "grade", g);
+    const chip = el(
+      "button",
+      {
+        type: "button",
+        class: `chip grade-chip g-${g.toLowerCase()}`,
+        "aria-pressed": String(state.grade === g),
+        title: `Grade ${g}: ${GRADE_PHRASES[g] || ""}`,
+      },
+      g,
+    );
+    chip.appendChild(el("span", { class: "chip-count" }, String(n)));
+    chip.setAttribute("aria-label", `Filter by grade ${g}, ${GRADE_PHRASES[g] || ""}: ${n} plugins`);
+    chip.addEventListener("click", () => {
+      state.grade = state.grade === g ? "" : g;
+      document.getElementById("grade-select").value = state.grade;
+      render();
+    });
+    strip.appendChild(chip);
   }
 }
 
@@ -93,14 +121,28 @@ function renderRow(tbody, p) {
   tbody.appendChild(tr);
 }
 
+const SORTERS = {
+  // Grade first, then stars within a grade (nulls last).
+  grade: (a, b) =>
+    GRADE_ORDER.indexOf(a.grade) - GRADE_ORDER.indexOf(b.grade) ||
+    (b.stars ?? -1) - (a.stars ?? -1),
+  stars: (a, b) => (b.stars ?? -1) - (a.stars ?? -1),
+  date: (a, b) =>
+    (b.verified || "").localeCompare(a.verified || "") ||
+    (b.stars ?? -1) - (a.stars ?? -1),
+};
+
 function anyFilterActive() {
   return Boolean(state.query || state.grade || state.category);
 }
 
 function render() {
   if (!data) return; // Controls are wired before the fetch resolves; ignore early events.
-  const rows = data.plugins.filter(matches);
+  const rows = data.plugins.filter(matches).sort(SORTERS[state.sort] || SORTERS.grade);
   const total = data.plugins.length;
+
+  // Rebuild the strip so aria-pressed tracks the active grade filter.
+  renderGradeStrip();
 
   const tbody = document.getElementById("tbody");
   tbody.textContent = "";
@@ -137,6 +179,10 @@ function wireControls() {
   });
   document.getElementById("category-select").addEventListener("change", (e) => {
     state.category = e.target.value;
+    render();
+  });
+  document.getElementById("sort-select").addEventListener("change", (e) => {
+    state.sort = e.target.value;
     render();
   });
   document.getElementById("clear-filters").addEventListener("click", clearFilters);
@@ -178,6 +224,8 @@ async function main() {
   const cats = [...new Set(data.plugins.map((p) => p.category))].sort();
   populateSelect(document.getElementById("category-select"), data.categories || cats, "category",
     `All categories (${cats.length})`);
+
+  renderGradeStrip();
 
   render();
 }

@@ -26,6 +26,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gradeCell, gradeLabel } from "../lib/output.js";
 /** Grades that may be installed after a single confirmation (spec §5.1). */
 const CONSENT_FREE_GRADES = ["A", "B", "C"];
 /** Flag that alone satisfies the §5.3 risk gate. Never suggested by the UI. */
@@ -271,7 +272,7 @@ export function renderTrustCard(ctx, candidate, profile) {
         "",
         ctx.output.card("TRUST SUMMARY", [
             ["plugin", candidate.id],
-            ["grade", candidate.grade ?? "not reviewed"],
+            ["grade", gradeLabel(candidate.grade)],
             ["verified", candidate.verifiedAt || "unknown"],
             ["source", candidate.source],
             ["profile", profile],
@@ -343,7 +344,7 @@ function renderAmbiguous(query, resolution, ctx) {
         `"${query}" matches ${resolution.candidates.length} catalog entries. Nothing was installed;`,
         "ambiguity is never resolved silently.",
         "",
-        ctx.output.table(["GRADE", "PLUGIN", "REPO", "SOURCE"], resolution.candidates.map((entry) => [entry.grade ?? "?", entry.id, entry.repo, entry.source])),
+        ctx.output.table(["GRADE", "PLUGIN", "REPO", "SOURCE"], resolution.candidates.map((entry) => [gradeCell(entry.grade), entry.id, entry.repo, entry.source])),
         "Re-run with an exact repo or specifier, e.g. `/bridge-install github:owner/repo`.",
         "",
     ].join("\n");

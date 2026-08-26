@@ -72,6 +72,7 @@ const categories = [...new Set(reviewed.map((r) => r.category))].sort();
 
 const data = {
   generatedFrom: "docs/catalog/INDEX.md + docs/catalog/manifest.json",
+  generatedAt: new Date().toISOString(),
   snapshot: snapshotDate(indexMd),
   // Computed from the table itself; INDEX.md's prose distribution line has drifted before.
   distribution: Object.fromEntries(

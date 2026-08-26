@@ -1,11 +1,12 @@
 {
   "generatedFrom": "docs/catalog/INDEX.md + docs/catalog/manifest.json",
+  "generatedAt": "2026-08-26T12:36:48.189Z",
   "snapshot": "2026-08-19",
   "distribution": {
     "A": 0,
-    "B": 6,
-    "C": 10,
-    "D": 1,
+    "B": 11,
+    "C": 29,
+    "D": 3,
     "F": 0
   },
   "grades": [
@@ -24,6 +25,7 @@
     "market",
     "memory",
     "security",
+    "tools",
     "ui",
     "uncategorized",
     "usage",
@@ -31,6 +33,18 @@
     "workflow"
   ],
   "plugins": [
+    {
+      "grade": "B",
+      "name": "dsh-plugin-reactive-resume",
+      "repo": "amruthpillai/reactive-resume",
+      "stars": 41700,
+      "verdict": "The shipped plugin is 88 lines that do exactly one thing - hand your API key to the Reactive Resume origin you configured and mount its MCP tools - with no telemetry, no child processes, no dynamic code execution, and no credential path beyond the one environment variable the README names.",
+      "verified": "2026-08-26",
+      "card": "cards/reactive-resume.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/reactive-resume.md"
+    },
     {
       "grade": "B",
       "name": "OpenViking memory plugin",
@@ -42,6 +56,42 @@
       "category": "memory",
       "description": "OpenViking memory and context bundle for DeepSeek Harness: pre-step auto-recall and profile injection, session capture, `viking://` URI guarding, and recall/write memory tools backed by an OpenViking server.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/openviking.md"
+    },
+    {
+      "grade": "B",
+      "name": "PicGo (`@picgo/dsh-plugin`)",
+      "repo": "Molunerfinn/PicGo",
+      "stars": 27000,
+      "verdict": "Every network call the plugin itself makes goes to `127.0.0.1:36677` - the PicGo desktop app on your own machine - and the only credential it touches is that app's own auth secret; the far larger capability, uploading your files to a configured image host, is delegated to the `picgo` library and is precisely the advertised product.",
+      "verified": "2026-08-26",
+      "card": "cards/picgo.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/picgo.md"
+    },
+    {
+      "grade": "B",
+      "name": "WeKnora tools (`@wxg-prc-cpg/dsh-weknora`)",
+      "repo": "Tencent/WeKnora",
+      "stars": 20600,
+      "verdict": "The plugin is a thin, well-typed HTTP client that registers up to four read-only retrieval tools against one WeKnora deployment you configure, with no dynamic code execution, no child processes, no filesystem access, and no credential path beyond the one API key that authenticates that deployment.",
+      "verified": "2026-08-26",
+      "card": "cards/weknora.md",
+      "category": "tools",
+      "description": "Four read-only tools over a WeKnora knowledge base: list knowledge bases, hybrid passage search, reassemble one document's chunks in order, and WeKnora's own cited RAG or ReAct-agent answer with a resumable session id.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/weknora.md"
+    },
+    {
+      "grade": "B",
+      "name": "awesome-gpt-image-2 (`gpt-image-2-style-library`)",
+      "repo": "freestylefly/awesome-gpt-image-2",
+      "stars": 17600,
+      "verdict": "The graded skill is inert markdown and JSON with a cpSync-only installer; all scanner volume belongs to the hosted web app around it, which never runs on an agent user's machine.",
+      "verified": "2026-08-26",
+      "card": "cards/awesome-gpt-image-2.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/awesome-gpt-image-2.md"
     },
     {
       "grade": "B",
@@ -78,6 +128,18 @@
       "category": "ui",
       "description": "Full sidebar workbench with file rendering and editing, terminal, Git, and subagents; third-party plugins can register new tabs.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-better-sidebar.md"
+    },
+    {
+      "grade": "B",
+      "name": "NanmiCoder dsh-agent-teams (`dsh-agent-teams`)",
+      "repo": "NanmiCoder/dsh-agent-teams",
+      "stars": 1000,
+      "verdict": "The cleanest plugin this audit line has reviewed: zero network egress in shipped code, zero telemetry, zero dynamic code execution, filesystem writes confined to `<workspace>/.agent-teams/`, no npm lifecycle hooks; residual risk comes from what the product is - members are full-capability subagents and the npm install channel floats rather than pins.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-agent-teams.md",
+      "category": "workflow",
+      "description": "AgentTeams multi-agent teams.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-agent-teams.md"
     },
     {
       "grade": "B",
@@ -129,6 +191,138 @@
     },
     {
       "grade": "C",
+      "name": "Reasonix",
+      "repo": "esengine/DeepSeek-Reasonix",
+      "stars": 35200,
+      "verdict": "Nothing hostile was found and the security-relevant code that was read is unusually careful, but this is a full coding agent rather than a plugin: it phones home by default under a first-run consent prompt, its extension system grants sidecars the unfiltered process environment by explicit design, and what npm installs is a prebuilt binary this audit could not verify against the source it read.",
+      "verified": "2026-08-26",
+      "card": "cards/reasonix.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/reasonix.md"
+    },
+    {
+      "grade": "C",
+      "name": "distilly (`@titanwings/distilly`)",
+      "repo": "titanwings/distilly",
+      "stars": 24000,
+      "verdict": "The installer is careful and small, but the payload it installs is a 7584-line Python toolbox whose whole purpose is to harvest another person's messages and documents out of Feishu, DingTalk, Slack and X, including by driving your logged-in Chrome profile - capable, honest about it in the README, and squarely a privacy instrument rather than a code hazard.",
+      "verified": "2026-08-26",
+      "card": "cards/distilly.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/distilly.md"
+    },
+    {
+      "grade": "C",
+      "name": "NocoBase AI plugin (`@nocobase/plugin-ai`)",
+      "repo": "nocobase/nocobase",
+      "stars": 23800,
+      "verdict": "Egress is admin-configured provider endpoints only, local file reads are structurally refused, no telemetry found - but real dynamic-execution machinery ships as product features behind an AGPL-plus-closed-pro-tier license, and the repo's dsh-plugin topic is unbacked by any manifest.",
+      "verified": "2026-08-26",
+      "card": "cards/nocobase.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/nocobase.md"
+    },
+    {
+      "grade": "C",
+      "name": "DSH Desktop (`dsh-plugin-desktop`)",
+      "repo": "anywhere-labs/dsh-desktop",
+      "stars": 20330,
+      "verdict": "Nothing hostile found: named endpoints behind a DNS-pinned private-range-blocking HTTP client and consent-gated updates, but installer validation is magic-only and market installs float to npm latest at click time.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-desktop.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-desktop.md"
+    },
+    {
+      "grade": "C",
+      "name": "voyager (Gemini Voyager)",
+      "repo": "Nagi-ovo/voyager",
+      "stars": 19800,
+      "verdict": "A large, disciplined, GPL-3.0 browser extension with no telemetry and a genuinely careful permission model, whose grade is set not by anything it does wrong but by what it is: code that runs inside your Gemini, Claude, and ChatGPT sessions, that can request `<all_urls>`, and that ships through stores whose artifacts this audit did not verify against the source.",
+      "verified": "2026-08-26",
+      "card": "cards/voyager.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/voyager.md"
+    },
+    {
+      "grade": "C",
+      "name": "learn-harness-engineering",
+      "repo": "walkinglabs/learn-harness-engineering",
+      "stars": 14100,
+      "verdict": "Almost all 638 scanned files are course prose, translations, and student project scaffolds that never run on your machine; the executable surface is a read-only shell auditor and a small scaffolding skill with no network access, and the one real objection is that the README's headline install is an unpinned `curl \\| bash`.",
+      "verified": "2026-08-26",
+      "card": "cards/learn-harness-engineering.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/learn-harness-engineering.md"
+    },
+    {
+      "grade": "C",
+      "name": "EverOS memory layer (DSH integration withdrawn)",
+      "repo": "EverMind-AI/EverOS",
+      "stars": 12400,
+      "verdict": "Core is clean local-first Python with user-configured endpoints and zero dynamic execution, but its shipped Claude Code plugin sends every raw prompt to api.evermind.ai via session hooks, and the DSH plugin was moved out of this repo one day before audit.",
+      "verified": "2026-08-26",
+      "card": "cards/everos.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/everos.md"
+    },
+    {
+      "grade": "C",
+      "name": "MemOS memory plugin (`@memtensor/memos-local-plugin`)",
+      "repo": "MemTensor/MemOS",
+      "stars": 10989,
+      "verdict": "The DSH adapter has zero egress by construction, loopback-asserted viewer, local-only storage and read-only tools; sibling surfaces (opt-out telemetry sender, admin restart/spawn route) and unverified npm provenance cap it at C.",
+      "verified": "2026-08-26",
+      "card": "cards/memos.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/memos.md"
+    },
+    {
+      "grade": "C",
+      "name": "Yao Agents platform",
+      "repo": "YaoApp/yao",
+      "stars": 7800,
+      "verdict": "Nothing hostile survives adjudication of its DSH runner and skill injection, but the platform's own `secret_read` tool hands decrypted stored secrets to agent-invoked processes by design, the DSH path receives your connector API key through the process environment, and the license carries commercial-use conditions beyond Apache-2.0.",
+      "verified": "2026-08-26",
+      "card": "cards/yao.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/yao.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-web family (`@linxin666/*` aggregation)",
+      "repo": "zhu1090093659/dsh-web",
+      "stars": 6085,
+      "verdict": "Nothing hostile found on audited surfaces: loopback-fenced routes, 0600 SSH secret storage, transparently documented telemetry - but fourteen plugins beacon dsh-market.com daily with no opt-out switch, an optional quick tunnel can publish your web UI publicly, workshop installs float to newest, and one bundled skin silently fetches stock-quote hosts.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-web.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-web.md"
+    },
+    {
+      "grade": "C",
+      "name": "OpenPencil",
+      "repo": "ZSeven-W/openpencil",
+      "stars": 5600,
+      "verdict": "A well-documented Rust design app whose account sign-in runs through a closed-source prebuilt static library committed into the repo, while everything auditable (ticket verifier, relay endpoint parsing, MCP tools, user-configured AI dispatch) checked out clean.",
+      "verified": "2026-08-26",
+      "card": "cards/openpencil.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/openpencil.md"
+    },
+    {
+      "grade": "C",
       "name": "ouroboros",
       "repo": "Q00/ouroboros",
       "stars": 5565,
@@ -138,6 +332,18 @@
       "category": "workflow",
       "description": "Config-only bundle that mounts Ouroboros through the DSH MCP client, exposing 36 interview, Seed, execution, evaluation, and evolution workflow tools in DSH.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ouroboros.md"
+    },
+    {
+      "grade": "C",
+      "name": "iPolloWork DSH Studio plugins (`deepseek-idesign`)",
+      "repo": "Devin-AXIS/iPolloWork",
+      "stars": 4858,
+      "verdict": "Design/PPT bundles have zero egress with token-gated, traversal-proof workspace routes and a provenance-attested publish flow; capped at C by unverifiable tarball-to-commit equality and a source-available parent license.",
+      "verified": "2026-08-26",
+      "card": "cards/ipollowork.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ipollowork.md"
     },
     {
       "grade": "C",
@@ -153,6 +359,30 @@
     },
     {
       "grade": "C",
+      "name": "desktop-cc-gui (ccgui; not a plugin)",
+      "repo": "zhukunpenglinyutong/desktop-cc-gui",
+      "stars": 4100,
+      "verdict": "The DSH integration is a disciplined loopback-first RPC client that refuses to spawn the host except on explicit request, but adopting this desktop platform means accepting an undisclosed Baidu Analytics beacon on every launch with no consent or toggle, an optional remote service that binds all interfaces by default, and bundled skills that execute Vercel CLI and Doubao TTS calls inside agent sessions.",
+      "verified": "2026-08-26",
+      "card": "cards/desktop-cc-gui.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/desktop-cc-gui.md"
+    },
+    {
+      "grade": "C",
+      "name": "PetDex bridge (`@petdex/dsh-plugin`)",
+      "repo": "crafter-station/petdex",
+      "stars": 3975,
+      "verdict": "The DSH adapter itself is exemplary - loopback-only token-gated delivery of a content-free session projection with hash-enforced tarball provenance - but installing it means adopting a desktop companion whose hook layer reads every tool event across all your agents, ships opt-out telemetry, and auto-updates from its own endpoint.",
+      "verified": "2026-08-26",
+      "card": "cards/petdex.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/petdex.md"
+    },
+    {
+      "grade": "C",
       "name": "mirage (`@struktoai/mirage-dsh`)",
       "repo": "strukto-ai/mirage",
       "stars": 3520,
@@ -162,6 +392,30 @@
       "category": "dev",
       "description": "Swaps the filesystem and bash providers for a mirage virtual workspace: file tools and shell commands run over mounted resources (RAM, S3, Redis, Slack, Gmail, Notion, Postgres) instead of the host disk, with per-mount read/write/exec modes, per-command sandbox routing (monty, pyodide, quickjs in process; docker, e2b, daytona remote), and installed CLIs (git, gh, slack, linear, ntn, gws, or one you register) as head words in the virtual terminal.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/mirage.md"
+    },
+    {
+      "grade": "C",
+      "name": "J-Space Cognition Suite V3.7 (`j-space` skill)",
+      "repo": "Tiger3807861189/J-Space-Cognition-Suite-V3.7",
+      "stars": 3000,
+      "verdict": "The executable surface is two stdlib-only Python scripts with zero egress, credential access, or dynamic execution writing only a `.jspace/` ledger - the real product is ~1700 lines of assertive prompt material steering model self-narrative, capped at C by unverified benchmark claims and the pipeline ceiling.",
+      "verified": "2026-08-26",
+      "card": "cards/j-space-cognition-suite.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/j-space-cognition-suite.md"
+    },
+    {
+      "grade": "C",
+      "name": "VibeSkills / Vibe Code Orchestrator v4.0.0",
+      "repo": "foryourhealth111-pixel/Vibe-Skills",
+      "stars": 3000,
+      "verdict": "Core runtime and installer are disciplined (offline default, SHA-receipted installs, overwrite-forbidden managed blocks), but installing silently writes bootstrap directives into `~/.claude/CLAUDE.md` and equivalent host files with zero user-facing disclosure, one governed-mode path globally npm-installs an unpinned package, and 253 bundled third-party skills carry their own per-skill review burden.",
+      "verified": "2026-08-26",
+      "card": "cards/vibe-skills.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/vibe-skills.md"
     },
     {
       "grade": "C",
@@ -177,6 +431,18 @@
     },
     {
       "grade": "C",
+      "name": "BitFun DSH bridge (`@bitfun/dsh-acp`)",
+      "repo": "GCWing/BitFun",
+      "stars": 1818,
+      "verdict": "The bridge itself has no egress, no credential reads, and approval-gated sandboxed composition, but installing it means running a whole desktop platform with auto-update on and a first-party relay endpoint pre-seeded.",
+      "verified": "2026-08-26",
+      "card": "cards/bitfun.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/bitfun.md"
+    },
+    {
+      "grade": "C",
       "name": "dshmarket (`dshmarket`)",
       "repo": "dsh-market/dsh-market",
       "stars": 1100,
@@ -186,6 +452,18 @@
       "category": "market",
       "description": "Browse, search and install community plugins from inside DeepSeek Harness settings, with category filters, one-click updates, enable/disable, theme switching and configuration backup.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-market.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-vision-router (`dsh-vision-router@2.0.1`)",
+      "repo": "ysr666/dsh-vision-router",
+      "stars": 973,
+      "verdict": "Behaves as advertised and is unusually disciplined about consent boundaries, but its core function is shipping your images to a third-party endpoint: image turns go to OVHcloud's anonymous AI Endpoints without per-use consent, and it also spawns system binaries and can update itself through the hosting DSH CLI.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-vision-router.md",
+      "category": "vision",
+      "description": "Free vision for text-only agents: built-in keyless vision chain plus pixel tools (Q&A, grounding, crop, pixel diff, colors, OCR, SVG trace, cutout, screenshots); paste an image to use it.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-vision-router.md"
     },
     {
       "grade": "C",
@@ -224,6 +502,18 @@
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/memsearch.md"
     },
     {
+      "grade": "C",
+      "name": "hindsight (`@vectorize-io/hindsight-coding-agents`)",
+      "repo": "vectorize-io/hindsight",
+      "stars": null,
+      "verdict": "Clean on manual review of the DSH integration: egress goes only to the user-configured Hindsight server carrying the documented payload (prompts, transcripts, git history), no telemetry or credential-store reads, raw scanner F traces to test fixtures and bundled ajv; capped at C by the pipeline ceiling and an unpinned `uvx hindsight-embed@latest` download in daemon mode.",
+      "verified": "2026-08-26",
+      "card": "cards/hindsight.md",
+      "category": "memory",
+      "description": "Hindsight, agent memory that learns: long-term project memory with auto recall and retain, knowledge pages, deep reflection, and per-repo memory banks.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/hindsight.md"
+    },
+    {
       "grade": "D",
       "name": "ruflo / claude-flow",
       "repo": "ruvnet/ruflo",
@@ -234,6 +524,30 @@
       "category": "uncategorized",
       "description": "",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ruflo.md"
+    },
+    {
+      "grade": "D",
+      "name": "dsh-routing-suite (`@dsh-external/dsh-super-injector` + router presets)",
+      "repo": "yjh051108/dsh-routing-suite",
+      "stars": 6800,
+      "verdict": "No third-party egress, telemetry, or obfuscation anywhere in shipped code, but a git install triggers an npm `prepare` hook that can fetch an unpinned compiler at install time, and the product's core is loading arbitrary local packages - including ones its ingest flow has an AI agent build from any folder you hand it - into the live harness via dynamic code execution.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-routing-suite.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-routing-suite.md"
+    },
+    {
+      "grade": "D",
+      "name": "codeg multi-agent workspace (desktop app; not a plugin)",
+      "repo": "xintaofei/codeg",
+      "stars": 3000,
+      "verdict": "Internals are unusually careful (OS-keyring tokens, minisign-verified updates, version-pinned adapter installs, fail-closed token auth over a wildcard-bound control plane) yet the grade is D: the headline install is an unpinned `curl \\| bash` executing fresh release binaries into `/usr/local/bin`, agent provisioning runs npm lifecycle scripts at click time (force-enabled past ignore-scripts for one package), and adopting it means network-reachable control of every agent CLI on the machine.",
+      "verified": "2026-08-26",
+      "card": "cards/codeg.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/codeg.md"
     }
   ]
 }

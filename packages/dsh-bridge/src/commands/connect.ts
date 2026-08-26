@@ -538,7 +538,27 @@ export function parseConnectArgs(args: Readonly<Record<string, string>>): Connec
 
 /** Phase-1 runner: detection matrix by default; `test <provider>` for the smoke. */
 export async function runConnect(ctx: BridgeContext, args: Readonly<Record<string, string>>): Promise<CommandResult> {
-  const invocation = parseConnectArgs(args);
+  // parseConnectArgs throws on a bad invocation (its contract, pinned by
+  // tests). A slash command must still render a body rather than surface a
+  // raw exception, so the usage error becomes normal output here.
+  let invocation: ConnectInvocation;
+  try {
+    invocation = parseConnectArgs(args);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      markdown: [
+        "### /bridge-connect",
+        "",
+        detail,
+        "",
+        `Providers: ${Object.keys(PROVIDER_PROFILES).sort().join(", ")}.`,
+        "",
+        "Run bare to see every detected credential: `/bridge-connect`.",
+        "",
+      ].join("\n"),
+    };
+  }
 
   if (invocation.mode === "test") {
     const provider = invocation.provider as string;

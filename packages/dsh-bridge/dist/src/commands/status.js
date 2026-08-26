@@ -14,7 +14,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { heading } from "../lib/output.js";
+import { gradeCell, heading } from "../lib/output.js";
 /** A catalog card older than this many days is stale (task + spec S5). */
 export const STALE_AFTER_DAYS = 30;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -236,7 +236,7 @@ export function renderStatus(ctx, collected, installedCount) {
     ];
     if (collected.staleCards.length > 0) {
         blocks.push(`Stale cards (> ${STALE_AFTER_DAYS} days since verification):`, "");
-        blocks.push(ctx.output.table(["PLUGIN", "GRADE", "VERIFIED"], collected.staleCards.map((entry) => [entry.plugin, entry.grade, entry.verifiedOn ?? "?"])));
+        blocks.push(ctx.output.table(["GRADE", "PLUGIN", "VERIFIED"], collected.staleCards.map((entry) => [gradeCell(entry.grade), entry.plugin, entry.verifiedOn ?? "?"])));
         blocks.push("Re-verify with /bridge-trust <plugin>.", "");
     }
     blocks.push(`${installedCount} local install record(s) under the profile directory.`, "");

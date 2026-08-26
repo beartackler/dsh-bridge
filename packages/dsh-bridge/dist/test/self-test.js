@@ -237,13 +237,13 @@ describe("paths", () => {
     it("masks environment variables per connect spec S1", () => {
         const secret = "sk-proj-abcdefgh7Qa";
         // S1 mask: prefix(4) + ellipsis + last4.
-        assert.equal(maskSecret(secret), "sk-p\u2026h7Qa");
-        assert.equal(maskSecret("short9chr"), "\u2026"); // < 12 chars reveals nothing
+        assert.equal(maskSecret(secret), "sk-p...h7Qa");
+        assert.equal(maskSecret("short9chr"), "..."); // < 12 chars reveals nothing
         const absent = probeEnvVar("DEFINITELY_NOT_SET_12345", {});
         assert.deepEqual(absent, { name: "DEFINITELY_NOT_SET_12345", present: false, masked: "-" });
         const present = probeEnvVar("K", { K: secret });
         assert.equal(present.present, true);
-        assert.equal(present.masked, "sk-p\u2026h7Qa");
+        assert.equal(present.masked, "sk-p...h7Qa");
         assert.ok(!present.masked.includes("abcdefgh"));
         const empty = probeEnvVar("K", { K: "" });
         assert.equal(empty.present, false);
@@ -796,7 +796,7 @@ describe("connect detection", () => {
         });
         const anthropic = rows.find((r) => r.source === "$ANTHROPIC_API_KEY");
         assert.equal(anthropic?.status, "found");
-        assert.match(anthropic?.detail ?? "", /\u2026/);
+        assert.match(anthropic?.detail ?? "", /\.\.\./);
         const deepseek = rows.find((r) => r.source === "$DEEPSEEK_API_KEY");
         assert.equal(deepseek?.status, "malformed");
         assert.equal(deepseek?.detail, "placeholder-like value");

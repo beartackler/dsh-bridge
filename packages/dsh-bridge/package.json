@@ -1,0 +1,52 @@
+{
+  "name": "dsh-bridge",
+  "version": "0.1.0",
+  "description": "Familiar-face commands, connectors flow, and the trust layer for DeepSeek Harness, delivered as one DSH plugin.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "slash-commands",
+    "connectors",
+    "trust-report"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dsh-bridge/dsh-bridge.git",
+    "directory": "packages/dsh-bridge"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "npm run build && node --test dist/test/self-test.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0"
+  }
+}

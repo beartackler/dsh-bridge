@@ -7,9 +7,8 @@
  *    path filter) into one read-only git invocation run through ExecFn
  *    (injected; ctx.exec in the host, spawnSync in the node default, mocked
  *    in tests).
- *  - Parses --numstat + --name-status to compute the change-set summary and
- *    the skip list (lockfiles, binaries, generated files) per spec
- *    preconditions.
+ *  - Parses --numstat to compute the change-set summary and the skip list
+ *    (lockfiles, binaries, generated files) per spec preconditions.
  *  - Renders the structured review prompt (rubric axes in spec priority
  *    order, severity ladder, reviewer rules, output contract with file:line)
  *    for the model route to answer; no model call is made by this module.
@@ -24,7 +23,7 @@
 import { spawnSync } from "node:child_process";
 
 import { heading, table } from "../lib/output.js";
-import type { CommandResult } from "../lib/types.js";
+import type { BridgeContext, CommandResult } from "../lib/types.js";
 
 /** Result shape of one exec'd command. Mirrors ctx.exec's contract. */
 export interface ExecResult {
@@ -125,43 +124,45 @@ function nodeExec(): ExecFn {
 export function resolveReviewTarget(args: Readonly<Record<string, string>>, tokens: readonly string[]): ReviewTarget | null {
   const pathToken = tokens.find((token) => !token.startsWith("--"));
   if (args["staged"] !== undefined) {
-    return {kind: "staged", path: pathToken};
+    return pathToken === undefined ? {kind: "staged"} : {kind: "staged", path: pathToken};
   }
   if (typeof args["base"] === "string") {
-    return {kind: "base", base: args["base"], path: pathToken};
+    return pathToken === undefined ? {kind: "base", base: args["base"]} : {kind: "base", base: args["base"], path: pathToken};
   }
-  return {kind: "worktree", path: pathToken};
+  return pathToken === undefined ? {kind: "worktree"} : {kind: "worktree", path: pathToken};
 }
 
 /** The single read-only git invocation for the resolved target. */
 export function diffArgv(target: ReviewTarget): string[] {
   switch (target.kind) {
     case "worktree":
-      // Working tree vs HEAD: both index and unstaged, no pager.
-      return ["--no-pager", "diff", "HEAD", "--numstat", "--name-status"];
+      // Working tree vs HEAD: both index and unstaged, no pager. numstat only:
+      // --name-status would replace the numstat lines with status letters.
+      return ["--no-pager", "diff", "HEAD", "--numstat"];
     case "staged":
-      return ["--no-pager", "diff", "--cached", "--numstat", "--name-status"];
+      return ["--no-pager", "diff", "--cached", "--numstat"];
     case "base":
-      return ["--no-pager", "diff", `${target.base}...HEAD`, "--numstat", "--name-status"];
+      return ["--no-pager", "diff", `${target.base}...HEAD`, "--numstat"];
   }
 }
 
-interface NumstatRow {
+export interface NumstatRow {
   readonly added: number;
   readonly removed: number;
   readonly file: string;
   readonly binary: boolean;
 }
 
-function parseNumstat(stdout: string): NumstatRow[] {
+/** Parse `git diff --numstat` output; "-" counts mean binary files. */
+export function parseNumstat(stdout: string): NumstatRow[] {
   const rows: NumstatRow[] = [];
-  for (const line of stdout.split("\n")) {
-    const trimmed = line.trim();
+  for (const lineText of stdout.split("\n")) {
+    const trimmed = lineText.trim();
     if (trimmed === "") continue;
     const match = /^([-\d]+)\t([-\d]+)\t(.+)$/.exec(trimmed);
     if (match === null) continue;
-    const added = match[1];
-    const removed = match[2];
+    const added = match[1] ?? "";
+    const removed = match[2] ?? "";
     let file = match[3] ?? "";
     if (file.startsWith('"') && file.endsWith('"')) file = file.slice(1, -1);
     const binary = added === "-" || removed === "-";
@@ -183,7 +184,7 @@ export function summarizeDiff(rows: readonly NumstatRow[], maxChangedLines: numb
   let removed = 0;
   let truncated = false;
   for (const row of rows) {
-    const reason = row.binary ? "binary" : classifyFile(row.file);
+    const reason = row.binary && classifyFile(row.file) === "review" ? "binary" : classifyFile(row.file);
     if (reason !== "review") {
       skipped.push({file: row.file, reason});
       continue;

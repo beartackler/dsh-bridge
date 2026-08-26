@@ -16,7 +16,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { card, heading } from "../lib/output.js";
+import { heading } from "../lib/output.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 
 /** A catalog card older than this many days is stale (task + spec S5). */
@@ -254,7 +254,7 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
     rows.push({
       id: "plugins",
       label: "PLUGINS",
-      value: `${cards.length} reviewed · ${fresh} fresh · ${staleCards.length} stale (> ${STALE_AFTER_DAYS} days)`,
+      value: `${cards.length} reviewed, ${fresh} fresh, ${staleCards.length} stale (> ${STALE_AFTER_DAYS} days)`,
       source: "docs/catalog/INDEX.md verified dates",
       unavailable: false,
     });

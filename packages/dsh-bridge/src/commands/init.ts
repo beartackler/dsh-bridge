@@ -84,7 +84,7 @@ export interface InitScan {
   readonly notes: readonly string[];
 }
 
-function parsePackageJsonScripts(raw: string, source: string): Partial<Record<"install" | "build" | "test" | "lint" | "typecheck", DetectedCommand>> {
+function parsePackageJsonScripts(raw: string, source: string): MutableCommands {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -95,18 +95,44 @@ function parsePackageJsonScripts(raw: string, source: string): Partial<Record<"i
   const scripts = (parsed as Record<string, unknown>)["scripts"];
   if (typeof scripts !== "object" || scripts === null) return {};
   const map = scripts as Record<string, unknown>;
-  const pick = (...keys: string[]): DetectedCommand | undefined => {
+  const commands: MutableCommands = {};
+  const pick = (slot: "build" | "test" | "lint" | "typecheck", ...keys: string[]): void => {
     for (const key of keys) {
       const value = map[key];
-      if (typeof value === "string") return {label: key, command: `npm run ${key}`, source};
+      if (typeof value === "string") {
+        commands[slot] = {label: key, command: `npm run ${key}`, source};
+        return;
+      }
     }
-    return undefined;
   };
-  return {build: pick("build"), test: pick("test"), lint: pick("lint"), typecheck: pick("typecheck", "check")};
+  pick("build", "build");
+  pick("test", "test");
+  pick("lint", "lint");
+  pick("typecheck", "typecheck", "check");
+  return commands;
 }
 
+export interface DetectedStack {
+  readonly language: string;
+  readonly packageManager?: string;
+  readonly install?: DetectedCommand;
+  readonly build?: DetectedCommand;
+  readonly test?: DetectedCommand;
+  readonly lint?: DetectedCommand;
+  readonly typecheck?: DetectedCommand;
+  readonly notes: string[];
+}
+
+type MutableCommands = {
+  install?: DetectedCommand;
+  build?: DetectedCommand;
+  test?: DetectedCommand;
+  lint?: DetectedCommand;
+  typecheck?: DetectedCommand;
+};
+
 /** Detect toolchain + commands from manifests at the project root. */
-export function detectStack(io: InitIo, root: string): Pick<InitScan, "language" | "packageManager" | "install" | "build" | "test" | "lint" | "typecheck"> & {notes: string[]} {
+export function detectStack(io: InitIo, root: string): DetectedStack {
   const notes: string[] = [];
   const pkgPath = `${root}/package.json`;
   if (io.exists(pkgPath)) {
@@ -123,40 +149,42 @@ export function detectStack(io: InitIo, root: string): Pick<InitScan, "language"
           : io.exists(`${root}/package-lock.json`)
             ? "npm"
             : undefined;
-    const installCmd: DetectedCommand = {
-      label: "install",
-      command: pm === undefined ? "npm install" : `${pm} install`,
-      source: pm === undefined ? pkgPath : `${root}/${pm === "bun" ? "bun.lockb" : pm + "-lock.yaml"}`,
-    };
-    if (pm === "yarn") (installCmd as {command: string}).command = "yarn install";
-    if (pm === "bun") (installCmd as {command: string}).command = "bun install";
-    const rewriteRunner = (command: DetectedCommand | undefined): DetectedCommand | undefined => {
-      if (command === undefined) return undefined;
-      if (pm === "pnpm") return {...command, command: command.command.replace(/^npm run /, "pnpm run ")};
-      if (pm === "yarn") return {...command, command: command.command.replace(/^npm run /, "yarn ")};
-      if (pm === "bun") return {...command, command: command.command.replace(/^npm run /, "bun run ")};
-      return command;
-    };
+    const lockSource =
+      pm === undefined
+        ? pkgPath
+        : pm === "yarn"
+          ? `${root}/yarn.lock`
+          : pm === "bun"
+            ? `${root}/bun.lockb`
+            : `${root}/${pm}-lock.yaml`;
+    const commands: MutableCommands = {};
+    if (scripts.build !== undefined) commands.build = scripts.build;
+    if (scripts.test !== undefined) commands.test = scripts.test;
+    if (scripts.lint !== undefined) commands.lint = scripts.lint;
+    if (scripts.typecheck !== undefined) commands.typecheck = scripts.typecheck;
+    const runnerPrefix = pm === "pnpm" ? "pnpm run " : pm === "yarn" ? "yarn " : pm === "bun" ? "bun run " : "npm run ";
+    for (const key of ["build", "test", "lint", "typecheck"] as const) {
+      const command = commands[key];
+      if (command !== undefined) commands[key] = {...command, command: command.command.replace(/^npm run /, runnerPrefix)};
+    }
     return {
       language: "typescript/node",
-      packageManager: pm,
-      install: {...installCmd},
-      build: rewriteRunner(scripts.build),
-      test: rewriteRunner(scripts.test),
-      lint: rewriteRunner(scripts.lint),
-      typecheck: rewriteRunner(scripts.typecheck),
+      ...(pm === undefined ? {} : {packageManager: pm}),
+      install: {label: "install", command: pm === undefined || pm === "npm" ? "npm install" : `${pm} install`, source: lockSource},
+      ...commands,
       notes,
     };
   }
   const pyproject = `${root}/pyproject.toml`;
   if (io.exists(pyproject)) {
     notes.push(`pyproject.toml found; commands inferred from tool conventions (${pyproject})`);
+    const pyPm = io.exists(`${root}/uv.lock`) ? "uv" : io.exists(`${root}/poetry.lock`) ? "poetry" : undefined;
     return {
       language: "python",
-      packageManager: io.exists(`${root}/uv.lock`) ? "uv" : io.exists(`${root}/poetry.lock`) ? "poetry" : undefined,
+      ...(pyPm === undefined ? {} : {packageManager: pyPm}),
       install: {label: "install", command: "pip install -e .", source: pyproject},
       test: {label: "test", command: "pytest", source: pyproject},
-      lint: io.exists(`${root}/ruff.toml`) ? {label: "lint", command: "ruff check .", source: `${root}/ruff.toml`} : undefined,
+      ...(io.exists(`${root}/ruff.toml`) ? {lint: {label: "lint" as const, command: "ruff check .", source: `${root}/ruff.toml`}} : {}),
       notes,
     };
   }
@@ -174,7 +202,6 @@ export function detectStack(io: InitIo, root: string): Pick<InitScan, "language"
   if (io.exists(cargo)) {
     return {
       language: "rust",
-      install: undefined,
       build: {label: "build", command: "cargo build", source: cargo},
       test: {label: "test", command: "cargo test", source: cargo},
       lint: {label: "lint", command: "cargo clippy", source: cargo},

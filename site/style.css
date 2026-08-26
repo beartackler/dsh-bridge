@@ -21,13 +21,13 @@
 
   /* Grade palette. Letters carry the meaning; color reinforces.
      Chosen to stay distinguishable under common color-vision deficiencies:
-     A teal, B blue, C amber, D orange, F red. Light values tuned for >= 4.5:1
-     on their tinted badge backgrounds. */
-  --grade-a: oklch(0.52 0.085 195);
-  --grade-b: oklch(0.49 0.115 255);
-  --grade-c: oklch(0.52 0.105 80);
-  --grade-d: oklch(0.53 0.14 55);
-  --grade-f: oklch(0.51 0.185 27);
+     A teal, B blue, C amber, D orange, F red. Values are TEXT tones, tuned
+     against their own tinted badge backgrounds (>= 4.5:1, see contrast audit). */
+  --grade-a: oklch(0.42 0.1 195);
+  --grade-b: oklch(0.4 0.13 255);
+  --grade-c: oklch(0.42 0.11 80);
+  --grade-d: oklch(0.43 0.14 55);
+  --grade-f: oklch(0.42 0.19 27);
 
   /* Spacing scale, 4px base. */
   --s-1: 0.25rem;
@@ -62,11 +62,11 @@
     --border-strong: oklch(0.42 0.025 255);
     --accent: oklch(0.74 0.115 250);
 
-    --grade-a: oklch(0.79 0.095 195);
-    --grade-b: oklch(0.75 0.105 255);
-    --grade-c: oklch(0.81 0.125 88);
-    --grade-d: oklch(0.77 0.13 62);
-    --grade-f: oklch(0.72 0.155 25);
+    --grade-a: oklch(0.81 0.1 195);
+    --grade-b: oklch(0.78 0.11 255);
+    --grade-c: oklch(0.83 0.13 88);
+    --grade-d: oklch(0.8 0.14 62);
+    --grade-f: oklch(0.76 0.16 25);
   }
 }
 
@@ -80,6 +80,11 @@
 
 * {
   margin: 0;
+}
+
+/* Author display values otherwise beat the UA sheet's [hidden] rule. */
+[hidden] {
+  display: none !important;
 }
 
 html {
@@ -140,7 +145,7 @@ code,
 .skip-link {
   position: absolute;
   left: var(--s-4);
-  top: calc(-1 * var(--s-4));
+  top: -4rem;
   z-index: calc(var(--z-sticky) + 1);
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -294,6 +299,8 @@ code,
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .select-field label {
@@ -311,7 +318,9 @@ code,
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: var(--s-2) var(--s-3);
+  min-width: 0;
   max-width: 100%;
+  text-overflow: ellipsis;
   transition: border-color var(--t-fast) var(--ease-out),
     box-shadow var(--t-fast) var(--ease-out);
 }
@@ -452,6 +461,10 @@ table.catalog {
   border-bottom: none;
 }
 
+.plugin-name {
+  display: block;
+}
+
 .plugin-name a {
   color: var(--ink);
   font-weight: 600;
@@ -465,6 +478,7 @@ table.catalog {
 }
 
 .plugin-desc {
+  display: block;
   margin-top: 2px;
   font-size: 0.875rem;
   line-height: 1.55;
@@ -481,10 +495,13 @@ table.catalog {
     "Liberation Mono", monospace;
   font-size: 0.84375rem;
   color: var(--ink-muted);
+  text-decoration: none;
 }
 
 .repo a:hover {
   color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
 }
 
 .col-num {

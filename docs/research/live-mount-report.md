@@ -1,6 +1,6 @@
 # Live mount report: dsh-bridge in a real DeepSeek Harness runtime
 
-**Verdict: mounts (after two fixes, both applied).**
+**Verdict: mounts (after three fixes, all applied).**
 
 The plugin loads, registers all 17 `/bridge-*` commands into the real
 `CommandRuntime`, accepts its `Config` schema from a patch layer, and installs
@@ -116,6 +116,37 @@ and in `packages/dsh-bridge/package.json`: `"dsh": { "bundle": { "patch":
 
 The row's `name` is the package name, not a source path: bundle patch rows
 resolve through Node module resolution (`publish.md:56`).
+
+### Defect 3: broken import path in `catalog-access.ts` (fatal)
+
+Present at commit `9b0509e` and independent of the two fixes above. Booting an
+isolated build of pristine `HEAD` failed:
+
+```
+Error: dsh: plugin tree failed to load: failed to apply loader entry include
+(cordis:include): failed to import loader entry bridge (dsh-bridge):
+Cannot find module '/tmp/bridge-iso/dist/src/lib/browse.js'
+imported from /tmp/bridge-iso/dist/src/lib/catalog-access.js
+```
+
+`src/lib/catalog-access.ts:7-8` re-exported from `"./browse.js"`, resolving to
+`src/lib/browse.js`. No such module exists: the file is
+`src/commands/browse.ts`. TypeScript did not catch it because the specifier
+still resolved during type-check through the sibling `.ts` lookup, but Node's
+ESM loader resolves the emitted path literally and fails at import time.
+
+**Fix applied** at `src/lib/catalog-access.ts:7-8`:
+
+```ts
+export {extractGrade, loadManifest, loadManifestCached, repoBase, resolveCatalogPaths}
+  from "../commands/browse.js";
+export type {CatalogEntry} from "../commands/browse.js";
+```
+
+Verified: with the fix, the same isolated build boots and all four probed
+handlers execute successfully. This is the clearest argument for the exercise —
+a defect that fails every static check and every unit test, and breaks the
+product completely the first time a user installs it.
 
 ## 3. What the real Cordis/commands API confirmed about our assumptions
 
@@ -268,8 +299,13 @@ None for mounting. Open items, none of which block the verdict:
 
 ## Files changed by this investigation
 
-- `packages/dsh-bridge/src/index.ts:115-124` — omit `input` when `usage` is blank.
+- `packages/dsh-bridge/src/index.ts` — omit `input` when `usage` is blank
+  (defect 1); replaced the hand-copied Cordis augmentation with
+  `import type {} from "@deepseek-ai/dsh-commands"` (section 3).
+- `packages/dsh-bridge/src/lib/catalog-access.ts:7-8` — corrected the `browse`
+  import path (defect 3).
 - `packages/dsh-bridge/cordis.patch.yml` — new; the bundle's patch layer.
-- `packages/dsh-bridge/package.json` — added `dsh.bundle`, added the patch to `files`.
+- `packages/dsh-bridge/package.json` — added `dsh.bundle`, added the patch to
+  `files`, added `@deepseek-ai/dsh-commands` as a devDependency.
 
 `src/lib/registry.ts` was read but not modified.

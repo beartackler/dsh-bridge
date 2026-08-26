@@ -4,8 +4,8 @@
   "distribution": {
     "A": 0,
     "B": 6,
-    "C": 8,
-    "D": 0,
+    "C": 10,
+    "D": 1,
     "F": 0
   },
   "grades": [
@@ -25,6 +25,7 @@
     "memory",
     "security",
     "ui",
+    "uncategorized",
     "usage",
     "vision",
     "workflow"
@@ -101,6 +102,30 @@
       "category": "identity",
       "description": "Port of ponytail: an always-on lazy-senior-developer coding persona with intensity levels, persistence of the default level, and review, audit, debt, gain and help skills for DeepSeek Harness.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ponytail.md"
+    },
+    {
+      "grade": "C",
+      "name": "OpenDesign design plugin",
+      "repo": "nexu-io/open-design",
+      "stars": 91534,
+      "verdict": "The DSH profile adapter is stdio-only with no egress or credential reads; install-time builds, opt-out analytics, and an auto-updating desktop app cap it at C.",
+      "verified": "2026-08-26",
+      "card": "cards/open-design.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/open-design.md"
+    },
+    {
+      "grade": "C",
+      "name": "Cherry Studio (`@cherrystudio/dsh-bridge`)",
+      "repo": "CherryHQ/cherry-studio",
+      "stars": 51073,
+      "verdict": "Bridge control plane is token-gated loopback with a fail-closed policy engine, but an unauditable obfuscated SSO vendor bundle ships in the main process alongside opt-out telemetry.",
+      "verified": "2026-08-26",
+      "card": "cards/cherry-studio.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/cherry-studio.md"
     },
     {
       "grade": "C",
@@ -197,6 +222,18 @@
       "category": "memory",
       "description": "Shared Markdown memory for DSH and other coding agents, with automatic capture, pre-step context injection, searchable recall, and memory-to-skill self-evolution through a review panel.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/memsearch.md"
+    },
+    {
+      "grade": "D",
+      "name": "ruflo / claude-flow",
+      "repo": "ruvnet/ruflo",
+      "stars": 69420,
+      "verdict": "Nothing malicious found, but the CLI silently npm-installs patch updates at every startup and one workspace postinstall globally installs an unpinned tool.",
+      "verified": "2026-08-26",
+      "card": "cards/ruflo.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ruflo.md"
     }
   ]
 }

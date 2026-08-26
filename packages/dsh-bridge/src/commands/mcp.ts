@@ -195,15 +195,6 @@ export function redactConfig(config: McpServerConfig): Record<string, unknown> {
   return clone;
 }
 
-/** Human cell for one env/header entry; never shows the value itself. */
-function secretCell(name: string, value: unknown): string {
-  if (typeof value === "string" && /^\$\{?env[:.]/i.test(value)) {
-    return `${name} <- env reference (${name})`;
-  }
-  const note = secretShaped(value) ? "credential-shaped" : typeof value;
-  return `${name} (${note}, redacted)`;
-}
-
 function targetCell(entry: McpServerEntry): string {
   const config = entry.config;
   const rawTarget =

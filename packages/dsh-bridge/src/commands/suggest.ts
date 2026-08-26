@@ -53,7 +53,7 @@ export function intentTokens(idea: string): string[] {
   return idea
     .toLowerCase()
     .split(/[^a-z0-9_-]+/)
-    .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
 }
 
 /**

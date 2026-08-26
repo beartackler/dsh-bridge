@@ -110,6 +110,70 @@ export function makeExcerpt(raw: string): string {
   return `${flattened.slice(0, MAX_EXCERPT_LENGTH - 1)}\u2026`;
 }
 
+/* ------------------------------------------------------------------------- */
+/* Per-content analysis cache                                                 */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Memoization keyed by the content string itself.
+ *
+ * Before this cache, every file paid these costs once per consumer:
+ *  - maskComments(): O(n) char-by-char rebuild, run by runDetectors for four rules
+ *    plus twice more inside obfuscation's blob/staged-decode detectors => six full
+ *    rebuilds of each file;
+ *  - new LineIndex(): O(n) newline scan, run eagerly in every runDetectors call even
+ *    when a file has zero matches (the common case) => five scans per file.
+ *
+ * Outputs are byte-identical to calling the primitives directly; only the number of
+ * times they run changes. Purity of the primitives makes this sound.
+ *
+ * The caches are bounded: every consumer of one content string runs inside a single
+ * synchronous scanContent call, so a small window is enough to share work across rules
+ * without retaining the whole tree. Eviction resets the map wholesale, which affects
+ * speed only, never output.
+ */
+const CACHE_LIMIT = 128;
+
+let maskedCache = new Map<string, string>();
+
+/** Memoized maskComments for the scan pipeline. Same output, at most one rebuild per content. */
+export function maskCommentsCached(content: string): string {
+  let masked = maskedCache.get(content);
+  if (masked === undefined) {
+    if (maskedCache.size >= CACHE_LIMIT) maskedCache = new Map();
+    masked = maskComments(content);
+    maskedCache.set(content, masked);
+  }
+  return masked;
+}
+
+let lineIndexCache = new Map<string, LineIndex>();
+
+/** Shared LineIndex for the scan pipeline: built lazily, at most once per content. */
+export function lineIndexOf(content: string): LineIndex {
+  let index = lineIndexCache.get(content);
+  if (index === undefined) {
+    if (lineIndexCache.size >= CACHE_LIMIT) lineIndexCache = new Map();
+    index = new LineIndex(content);
+    lineIndexCache.set(content, index);
+  }
+  return index;
+}
+
+/** Drops cached analysis artifacts; called between scans so memory follows workload. */
+export function resetAnalysisCaches(): void {
+  maskedCache = new Map();
+  lineIndexCache = new Map();
+}
+
+/**
+ * Per-detector global-flags clones, keyed by the original pattern object. Detectors are
+ * frozen module-level constants, so each corpus regex is compiled exactly once for the
+ * lifetime of the process instead of once per (file x rule). The clone still belongs to
+ * the detector alone, so lastIndex state can never bleed across files or rules.
+ */
+const compiledPatterns = new WeakMap<RegExp, RegExp>();
+
 /**
  * Precomputed newline offsets, so offset->(line,col) is O(log n) instead of O(n)
  * per match. Minified bundles are single-line and megabytes wide; the naive
@@ -249,17 +313,22 @@ export interface RunDetectorsOptions {
  */
 export function runDetectors(options: RunDetectorsOptions): Finding[] {
   const { rule, filePath, content, detectors } = options;
-  const haystack = options.ignoreComments === false ? content : maskComments(content);
-  const index = new LineIndex(content);
+  const haystack = options.ignoreComments === false ? content : maskCommentsCached(content);
   const findings: Finding[] = [];
+  // Built lazily: files with zero matches (the common case) never pay the newline scan.
+  let index: LineIndex | null = null;
 
   for (const detector of detectors) {
     // Clone the pattern so rule modules can declare their regexes as module-level
     // constants without lastIndex bleeding across files (a classic /g footgun).
-    const flags = detector.pattern.flags.includes("g")
-      ? detector.pattern.flags
-      : `${detector.pattern.flags}g`;
-    const pattern = new RegExp(detector.pattern.source, flags);
+    // Compilation is hoisted per corpus: detectors carry frozen RegExp objects, so the
+    // cloned pattern is cached alongside the original instead of rebuilt per file.
+    let pattern = compiledPatterns.get(detector.pattern);
+    if (pattern === undefined) {
+      const flags = detector.pattern.flags.includes("g") ? detector.pattern.flags : `${detector.pattern.flags}g`;
+      pattern = new RegExp(detector.pattern.source, flags);
+      compiledPatterns.set(detector.pattern, pattern);
+    }
 
     let match: RegExpExecArray | null = pattern.exec(haystack);
     while (match !== null) {
@@ -267,6 +336,7 @@ export function runDetectors(options: RunDetectorsOptions): Finding[] {
         pattern.lastIndex += 1;
       } else if (!detector.refine || detector.refine(match, content)) {
         const offset = match.index;
+        index ??= lineIndexOf(content);
         const { line, col } = index.locate(offset);
         // Cite the real source text, not the comment-masked copy.
         const rawMatch = content.slice(offset, offset + match[0].length);

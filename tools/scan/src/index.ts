@@ -12,7 +12,16 @@
  * The exit code is what makes this usable as a CI gate.
  */
 
-import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { ALL_RULES, rulesDigest, sortFindings, SEVERITY_RANK, type Finding, type Rule, type Severity } from "./rules/index.js";
@@ -36,6 +45,129 @@ const SCANNABLE_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".j
 
 /** Matches the pipeline's S1 size guard: refuse archive-bomb-scale inputs. */
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Files larger than this are probed in fixed-size windows instead of being decoded whole.
+ * The probe bounds peak memory on bundle-scale inputs to one window; only a file whose
+ * window scan produced evidence gets a full decode, and that full-string pass reproduces
+ * the exact citations (path:line:col over the whole file) the report contract promises.
+ * Fixed window size => fully deterministic.
+ */
+const STREAM_CHUNK_BYTES = 1 * 1024 * 1024;
+/** Window overlap; must exceed the longest plausible detector hit plus its context. */
+const STREAM_OVERLAP_BYTES = 4 * 1024;
+
+/**
+ * Decode bytes to a string exactly like readFileSync(..., "utf8") does: strip a UTF-8
+ * BOM if present, then replace malformed sequences with U+FFFD (WHATWG decoding).
+ */
+function decodeUtf8(bytes: Uint8Array): string {
+  const bomless =
+    bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes;
+  return new TextDecoder("utf-8").decode(bomless);
+}
+
+/** Fast binary guard over raw bytes: a NUL anywhere in the first 4 KiB. */
+function looksBinary(bytes: Uint8Array): boolean {
+  const limit = Math.min(bytes.length, 4096);
+  for (let i = 0; i < limit; i += 1) {
+    if (bytes[i] === 0) return true;
+  }
+  return false;
+}
+
+/** Sentinel for loadFile: readable but binary (skipped by the binary guard). */
+const FILE_BINARY: { readonly __binary: true } = { __binary: true };
+
+interface LoadedFile {
+  readonly content?: string;
+}
+
+/**
+ * Single-pass load for regular-sized files. One sequential read fills the buffer; the
+ * binary guard runs on raw bytes BEFORE the UTF-8 decode, so binary files pay neither
+ * the decode nor any rule work. Byte-for-byte the same string readFileSync produced,
+ * verified by the decoder contract above.
+ */
+function loadFile(absolute: string): LoadedFile | null | typeof FILE_BINARY {
+  let fd: number;
+  try {
+    fd = openSync(absolute, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync(fd);
+    const bytes = Buffer.allocUnsafe(stat.size);
+    let read = 0;
+    while (read < stat.size) {
+      const n = readSync(fd, bytes, read, stat.size - read, read);
+      if (n <= 0) break;
+      read += n;
+    }
+    if (looksBinary(bytes)) return FILE_BINARY;
+    return { content: decodeUtf8(bytes.subarray(0, read)) };
+  } catch {
+    return null;
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {
+      // Nothing better to do with a failed close on a read-only descriptor.
+    }
+  }
+}
+
+/**
+ * Windowed probe for oversized files. Scans overlapping windows through a caller-owned
+ * reusable buffer, so peak memory is one window regardless of file size. Returns whether
+ * ANY detector fired anywhere; actual findings are recomputed later from the full string
+ * so citations stay whole-file accurate.
+ */
+function probeOversizedFile(
+  absolute: string,
+  relPath: string,
+  rules: readonly Rule[],
+  buffer: Buffer,
+): boolean {
+  let fd: number;
+  try {
+    fd = openSync(absolute, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const step = STREAM_CHUNK_BYTES - STREAM_OVERLAP_BYTES;
+    for (let start = 0; ; start += step) {
+      let total = 0;
+      while (total < STREAM_CHUNK_BYTES) {
+        const n = readSync(fd, buffer, total, STREAM_CHUNK_BYTES - total, start + total);
+        if (n <= 0) break;
+        total += n;
+      }
+      if (total === 0) return false;
+      const window = decodeUtf8(buffer.subarray(0, total));
+      let fired = false;
+      for (const rule of rules) {
+        if (rule.appliesTo && !rule.appliesTo(relPath)) continue;
+        if (rule.match(window, relPath).length > 0) {
+          fired = true;
+          break;
+        }
+      }
+      if (fired) return true;
+      if (total < STREAM_CHUNK_BYTES) return false; // EOF reached, nothing found
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {
+      // Read-only descriptor; ignore close failures.
+    }
+  }
+}
 
 export interface ScanOptions {
   readonly rules?: readonly Rule[];
@@ -129,6 +261,9 @@ export function scanDirectory(target: string, options: ScanOptions = {}): ScanRe
   let filesScanned = 0;
   let filesSkipped = 0;
   let bytesScanned = 0;
+  // One reusable window for all oversized files: allocation happens once per scan,
+  // not once per file.
+  const streamBuffer = Buffer.allocUnsafe(STREAM_CHUNK_BYTES);
 
   for (const absolute of files) {
     const relPath = toRelPosix(root, absolute);
@@ -137,45 +272,76 @@ export function scanDirectory(target: string, options: ScanOptions = {}): ScanRe
       continue;
     }
 
-    let content: string;
-    let size: number;
+    let fileSize = 0;
     try {
-      size = statSync(absolute).size;
-      if (size > maxBytes) {
-        filesSkipped += 1;
-        // Never skip silently. A payload hidden inside a padded, oversized file would
-        // otherwise vanish from the report entirely, leaving only an opaque counter.
-        findings.push({
-          id: "SUPPLY-001",
-          ruleId: "scan-limits",
-          family: "SUPPLY",
-          severity: "high",
-          message: `File exceeds the ${maxBytes}-byte scan limit (${size} bytes); its contents were not analyzed.`,
-          path: relPath,
-          line: 1,
-          col: 1,
-          excerpt: "",
-          excerptSha256: "",
-          confidence: 1,
-          note: "Unanalyzed regions cap the grade at C: absence of findings here is absence of evidence, not evidence of absence.",
-        });
-        continue;
-      }
-      content = readFileSync(absolute, "utf8");
+      fileSize = statSync(absolute).size;
     } catch {
       filesSkipped += 1;
       continue;
     }
 
-    // Heuristic binary guard: a NUL byte in the first 4 KiB means this is not source.
-    if (content.slice(0, 4096).includes("\u0000")) {
+    if (fileSize > maxBytes) {
       filesSkipped += 1;
+      // Never skip silently. A payload hidden inside a padded, oversized file would
+      // otherwise vanish from the report entirely, leaving only an opaque counter.
+      findings.push({
+        id: "SUPPLY-001",
+        ruleId: "scan-limits",
+        family: "SUPPLY",
+        severity: "high",
+        message: `File exceeds the ${maxBytes}-byte scan limit (${fileSize} bytes); its contents were not analyzed.`,
+        path: relPath,
+        line: 1,
+        col: 1,
+        excerpt: "",
+        excerptSha256: "",
+        confidence: 1,
+        note: "Unanalyzed regions cap the grade at C: absence of findings here is absence of evidence, not evidence of absence.",
+      });
       continue;
     }
 
-    filesScanned += 1;
-    bytesScanned += size;
-    findings.push(...scanContent(content, relPath, rules));
+    if (fileSize <= STREAM_CHUNK_BYTES) {
+      const loaded = loadFile(absolute);
+      if (loaded === null || !("content" in loaded)) {
+        filesSkipped += 1;
+        continue;
+      }
+      filesScanned += 1;
+      bytesScanned += fileSize;
+      findings.push(...scanContent(loaded.content, relPath, rules));
+    } else {
+      // Oversized-but-under-limit: probe in windows through one shared buffer, and only
+      // pay a whole-file decode when the probe saw evidence. The second pass recomputes
+      // findings over the full string, so citations stay whole-file accurate.
+      const suspicious = probeOversizedFile(absolute, relPath, rules, streamBuffer);
+      if (!suspicious) {
+        // The file was read and analyzed (nothing fired); it counts as scanned.
+        filesScanned += 1;
+        bytesScanned += fileSize;
+        continue;
+      }
+      let content: string | null = null;
+      try {
+        const fd = openSync(absolute, "r");
+        try {
+          const bytes = Buffer.allocUnsafe(fileSize);
+          const n = readSync(fd, bytes, 0, fileSize, 0);
+          if (n > 0 && !looksBinary(bytes)) content = decodeUtf8(bytes.subarray(0, n));
+        } finally {
+          closeSync(fd);
+        }
+      } catch {
+        content = null;
+      }
+      if (content === null) {
+        filesSkipped += 1;
+        continue;
+      }
+      filesScanned += 1;
+      bytesScanned += fileSize;
+      findings.push(...scanContent(content, relPath, rules));
+    }
   }
 
   return {

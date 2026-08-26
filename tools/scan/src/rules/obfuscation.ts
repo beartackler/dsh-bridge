@@ -12,9 +12,9 @@
  */
 
 import {
-  LineIndex,
+  lineIndexOf,
   makeExcerpt,
-  maskComments,
+  maskCommentsCached,
   runDetectors,
   sha256,
   sortFindings,
@@ -35,11 +35,14 @@ export function shannonEntropy(input: string): number {
   return entropy;
 }
 
+/** Primary gate for high-entropy blob findings. */
 const MIN_BLOB_LENGTH = 120;
+
 /**
  * Second tier. Split-blob gaming works by keeping every literal just under the primary
  * gate, so a shorter run still leaves evidence — at low severity, which is what keeps
- * the inlined-SVG false-positive problem from coming back.
+ * the inlined-SVG false-positive problem from coming back. The threshold is baked into
+ * BLOB_LITERAL below (hoisted so it is not recompiled per file).
  */
 const MIN_SHORT_BLOB_LENGTH = 48;
 const ENTROPY_THRESHOLD = 4.2;
@@ -52,27 +55,39 @@ const DECODE_CALL =
 const EXEC_OR_NET_CAPABLE =
   /(?<![.\w$])eval\s*\(|\bnew\s+Function\s*\(|\(\s*0\s*,\s*eval\s*\)|\bvm\s*\.\s*run|\bchild_process\b|(?<![.\w$])fetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bhttps?\s*\.\s*request\s*\(|https?:\/\/|\bset(?:Timeout|Interval)\s*\(|\baxios\b|\bnode-fetch\b|\bundici\b/;
 
+/** High-entropy literal scan: quoted runs of base64/hex-shaped characters. */
+const BLOB_LITERAL = new RegExp(
+  `(['"\`])((?:[A-Za-z0-9+/=_-]|\\\\.){${MIN_SHORT_BLOB_LENGTH},}?)\\1`,
+  "g",
+);
+
+/** Staged-decode scan; same source as DECODE_CALL, cloned with the global flag. */
+const DECODE_CALL_GLOBAL = new RegExp(DECODE_CALL.source, "g");
+
 /**
  * Long, high-entropy string literals: the payload half of a staged loader.
  * Scanned separately from the regex detectors because the decision needs entropy,
  * not just shape, and because a length-only rule would flag every inlined SVG.
  */
-function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule): Finding[] {
-  const haystack = maskComments(content);
-  const index = new LineIndex(content);
+function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule, haystack?: string): Finding[] {
+  const masked = haystack ?? maskCommentsCached(content);
   const findings: Finding[] = [];
-  const literal = new RegExp(`(['"\`])((?:[A-Za-z0-9+/=_-]|\\\\.){${MIN_SHORT_BLOB_LENGTH},}?)\\1`, "g");
+  // Reset lastIndex so the shared module-level regex stays pure across calls (the same
+  // contract the engine applies to corpus detectors).
+  BLOB_LITERAL.lastIndex = 0;
+  const literal = BLOB_LITERAL;
   // A short blob only counts as evidence when the module can do something with it.
-  const capable = EXEC_OR_NET_CAPABLE.test(haystack) || DECODE_CALL.test(haystack);
+  // A short blob only counts as evidence when the module can do something with it.
+  const capable = EXEC_OR_NET_CAPABLE.test(masked) || DECODE_CALL.test(masked);
 
-  let match: RegExpExecArray | null = literal.exec(haystack);
+  let match: RegExpExecArray | null = literal.exec(masked);
   while (match !== null) {
     const body = match[2];
     const long = body.length >= MIN_BLOB_LENGTH;
     if (long || capable) {
       const entropy = shannonEntropy(body);
       if (entropy >= ENTROPY_THRESHOLD) {
-        const { line, col } = index.locate(match.index);
+        const { line, col } = lineIndexOf(content).locate(match.index);
         const raw = content.slice(match.index, match.index + match[0].length);
         findings.push({
           id: long ? "OBFU-001" : "OBFU-012",
@@ -92,7 +107,7 @@ function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule): 
         });
       }
     }
-    match = literal.exec(haystack);
+    match = literal.exec(masked);
   }
   return findings;
 }
@@ -107,15 +122,14 @@ function detectHighEntropyBlobs(content: string, filePath: string, rule: Rule): 
  * signal the OBFU family exists to surface. One finding per file, cited at the decode.
  */
 function detectStagedDecode(content: string, filePath: string, rule: Rule): Finding[] {
-  const haystack = maskComments(content);
-  if (!EXEC_OR_NET_CAPABLE.test(haystack)) return [];
+  if (!EXEC_OR_NET_CAPABLE.test(maskCommentsCached(content))) return [];
 
-  const decode = new RegExp(DECODE_CALL.source, "g");
-  const match = decode.exec(haystack);
+  const haystack = maskCommentsCached(content);
+  DECODE_CALL_GLOBAL.lastIndex = 0;
+  const match = DECODE_CALL_GLOBAL.exec(haystack);
   if (match === null) return [];
 
-  const index = new LineIndex(content);
-  const { line, col } = index.locate(match.index);
+  const { line, col } = lineIndexOf(content).locate(match.index);
   const raw = content.slice(match.index, match.index + match[0].length);
   return [
     {
@@ -128,7 +142,7 @@ function detectStagedDecode(content: string, filePath: string, rule: Rule): Find
       path: filePath,
       line,
       col,
-      excerpt: makeExcerpt(index.lineText(content, line)),
+      excerpt: makeExcerpt(lineIndexOf(content).lineText(content, line)),
       excerptSha256: sha256(raw),
       confidence: 0.6,
       note: "Adjacency is not required: routing a decoded string through a variable is how the eval(atob(...)) chain is normally split. Benign shape: decoding user data that is never executed or sent.",
@@ -231,8 +245,10 @@ export const obfuscationRule: Rule = {
 
     return sortFindings([
       ...regexFindings,
+      // The masked haystack computed for runDetectors is reused by both custom
+      // detectors instead of being rebuilt twice more.
       ...detectStagedDecode(content, filePath, this),
-      ...detectHighEntropyBlobs(content, filePath, this),
+      ...detectHighEntropyBlobs(content, filePath, this, maskCommentsCached(content)),
     ]);
   },
 };

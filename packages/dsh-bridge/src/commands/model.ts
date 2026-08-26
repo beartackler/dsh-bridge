@@ -167,7 +167,7 @@ export function renderModelList(
   const blocks: string[] = [
     heading("/bridge-model"),
     "",
-    `${routes.length} route(s) · ${availableCount} available · default: ${activeId ?? "none"}${config.sessionOverride !== undefined && config.sessionOverride !== null ? " (session override)" : ""}`,
+    `${routes.length} route(s), ${availableCount} available, default: ${activeId ?? "none"}${config.sessionOverride !== undefined && config.sessionOverride !== null ? " (session override)" : ""}`,
     "",
     ctx.output.table(
       ["MODEL", "PROVIDER", "AUTH", "AVAILABILITY"],
@@ -295,12 +295,20 @@ export type ParsedModelArgs =
   | { readonly verb: "use"; readonly target: string; readonly save: boolean; readonly reset: boolean }
   | { readonly verb: "test"; readonly target: string };
 
+/** Split a positional blob into the leading route token and trailing flags. */
+function splitTarget(rest: string): { target: string; save: boolean; reset: boolean } {
+  const words = rest.split(/\s+/).filter((word) => word !== "");
+  const target = words.find((word) => !word.startsWith("--")) ?? "";
+  return { target, save: words.includes("--save"), reset: words.includes("--reset") };
+}
+
 /** Parse `_`/`rest` positionals plus flags into a routed verb. Throws on misuse. */
 export function parseModelArgs(args: Readonly<Record<string, string>>): ParsedModelArgs {
   const verb = (args["_"] ?? "").trim().toLowerCase();
   const rest = (args["rest"] ?? "").trim();
-  const save = args["save"] !== undefined;
-  const reset = args["reset"] !== undefined;
+  const split = splitTarget(rest);
+  const save = args["save"] !== undefined || split.save;
+  const reset = args["reset"] !== undefined || split.reset;
 
   if (verb === "" || verb === "list") {
     if (reset || save) throw new ModelCommandError("--save/--reset belong to `use`; nothing to list");
@@ -308,14 +316,12 @@ export function parseModelArgs(args: Readonly<Record<string, string>>): ParsedMo
   }
   if (verb === "use") {
     if (reset) return { verb: "use", target: "", save: false, reset: true };
-    const target = rest.split(/\s+/)[0] ?? "";
-    if (target === "") throw new ModelCommandError("usage: /bridge-model use <provider>/<model> [--save]");
-    return { verb: "use", target, save, reset: false };
+    if (split.target === "") throw new ModelCommandError("usage: /bridge-model use <provider>/<model> [--save]");
+    return { verb: "use", target: split.target, save, reset: false };
   }
   if (verb === "test") {
-    const target = rest.split(/\s+/)[0] ?? "";
-    if (target === "") throw new ModelCommandError("usage: /bridge-model test <provider>/<model>");
-    return { verb: "test", target };
+    if (split.target === "") throw new ModelCommandError("usage: /bridge-model test <provider>/<model>");
+    return { verb: "test", target: split.target };
   }
   throw new ModelCommandError(`unknown subcommand "${verb}"`);
 }

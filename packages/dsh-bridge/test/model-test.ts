@@ -49,6 +49,21 @@ function fixtureConfig(): Record<string, unknown> {
   };
 }
 
+/**
+ * Structural echo of commands/model.ts ModelRoute. Dynamic imports with
+ * computed specifiers are `any`, so generic containers need explicit types.
+ */
+interface ModelRouteShape {
+  readonly id: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly authKind: string;
+  readonly available: boolean;
+  readonly reason: string | null;
+  readonly registered: boolean;
+  readonly declared: boolean;
+}
+
 describe("model route collection", () => {
   it("joins registered and declared routes with derived availability", () => {
     const routes = collectRoutes(fixtureConfig() as never);
@@ -62,7 +77,7 @@ describe("model route collection", () => {
         "dashscope/qwen3-max",
       ],
     );
-    const byId = new Map(routes.map((route: { id: string }) => [route.id, route]));
+    const byId = new Map<string, ModelRouteShape>(routes.map((route: ModelRouteShape) => [route.id, route] as const));
     const chat = byId.get("deepseek/deepseek-chat");
     assert.equal(chat?.available, true);
     assert.equal(chat?.reason, null);
@@ -115,15 +130,24 @@ describe("model token resolution", () => {
   });
 
   it("refuses ambiguous or unknown tokens with a list, never a guess", () => {
-    const ambiguous = resolveRouteToken(routes, "deepseek");
+    const routes = collectRoutes({
+      default: undefined,
+      routes: [
+        { provider: "a", model: "shared" },
+        { provider: "b", model: "shared" },
+        { provider: "c", model: "lonely" },
+      ],
+    } as never);
+    const ambiguous = resolveRouteToken(routes, "shared");
     assert.ok("error" in ambiguous);
-    assert.match(ambiguous.error, /ambiguity|ambiguous|served by/);
+    assert.match(ambiguous.error, /ambiguous/);
+    assert.ok(ambiguous.error.includes("a/shared") && ambiguous.error.includes("b/shared"), "must list the candidates");
 
     const missing = resolveRouteToken(routes, "nope");
     assert.ok("error" in missing);
     assert.match(missing.error, /unknown route/);
 
-    assert.ok(!("error" in resolveRouteToken(routes, "deepseek-chat")));
+    assert.ok(!("error" in resolveRouteToken(routes, "lonely")));
   });
 });
 
@@ -132,7 +156,7 @@ describe("model rendering", () => {
 
   it("marks the active default and counts availability in the header", () => {
     const markdown = renderModelList(ctx, collectRoutes(fixtureConfig() as never), fixtureConfig() as never);
-    assert.match(markdown, /5 route\(s\) · 2 available · default: deepseek\/deepseek-chat/);
+    assert.match(markdown, /5 route\(s\), 2 available, default: deepseek\/deepseek-chat/);
     assert.match(markdown, /\* marks the active default/);
     // The active row carries the star marker on its model cell.
     assert.match(markdown, /deepseek-chat \*/);
@@ -152,8 +176,8 @@ describe("model rendering", () => {
     assert.ok(!markdown.includes("written"), "must not claim a write happened");
 
     const persisted = renderUseInstructions("deepseek/deepseek-chat", true, false);
-    assert.match(persisted, /--save/);
     assert.match(persisted, /settings\.yaml/);
+    assert.match(persisted, /model:\s*\n\s*default:/);
   });
 
   it("renders the reset procedure for --reset", () => {
@@ -181,6 +205,12 @@ describe("model arg parsing", () => {
   });
 
   it("parses use/test targets and flags", () => {
+    assert.deepEqual(parseModelArgs({ _: "use", rest: "--save deepseek/deepseek-chat" }), {
+      verb: "use",
+      target: "deepseek/deepseek-chat",
+      save: true,
+      reset: false,
+    });
     assert.deepEqual(parseModelArgs({ _: "use", rest: "deepseek/deepseek-chat --save" }), {
       verb: "use",
       target: "deepseek/deepseek-chat",
@@ -203,7 +233,7 @@ describe("model command runner", () => {
 
   it("lists routes end to end with structured data", async () => {
     const result = await runModel(ctx, {}, { config: fixtureConfig() as never });
-    assert.match(result.markdown, /deepseek\/deepseek-reasoner/);
+    assert.match(result.markdown, /deepseek-reasoner/);
     assert.match(result.markdown, /dormant - declared, not configured/);
     const data = result.data as { routes: unknown[]; default: unknown };
     assert.equal(data.routes.length, 5);

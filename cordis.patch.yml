@@ -1,0 +1,6 @@
+# Bundle layer for dsh-bridge, applied when the package is listed in a
+# profile's dsh.profile.bundles. The row name is the package name; Node
+# resolution finds the installed entry (this package's root manifest).
+- insert:
+    - id: bridge
+      name: dsh-bridge

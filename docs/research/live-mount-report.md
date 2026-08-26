@@ -297,6 +297,64 @@ None for mounting. Open items, none of which block the verdict:
    `command/run`/`command/done` session events, needs a real `Agent` and was
    not exercised.
 
+## 7. Addendum (2026-08-26, later): installing from git works
+
+The original report stopped at `link:` installs from a local checkout. The
+`github:` form now works too, after a root-level restructure. What was broken:
+
+- `dsh plugin --profile web add github:beartackler/dsh-bridge` exits 0 but
+  activates nothing. `dsh plugin` is a thin forwarder to `pnpm add` in the
+  profile directory (`@deepseek-ai/dsh/lib/plugin-*.js`, `runPlugin`), and pnpm
+  cloned the whole monorepo, whose root had no `package.json`. Reconcile
+  therefore warned: `dsh-bridge declares no dsh.bundle`.
+- Activation keys off the *installed root* manifest: a dependency joins
+  `dsh.profile.bundles` only if its own manifest declares `dsh.bundle`.
+
+**Fix applied** (repo root, no code changes):
+
+1. Root manifest shim `package.json`: package name `dsh-bridge`,
+   `"main": "./index.js"`, and the `dsh.bundle` declaration itself.
+2. Root entry redirector `index.js`: `export * from
+   "./packages/dsh-bridge/dist/src/index.js"`; the loader imports the package
+   by name and finds the real compiled entry.
+3. Root `cordis.patch.yml`: `- insert: [- id: bridge, name: dsh-bridge]`
+   (the row name is the package name; Node resolution finds the installed
+   entry).
+4. Prebuilt artifacts committed to git (`packages/dsh-bridge/dist`,
+   `tools/scan/dist`, `docs/catalog/cards`) and listed in the shim's `files`;
+   `.gitignore` lost its unanchored `dist/` and `lib/` lines because pnpm pack
+   honors `.gitignore` for git-hosted packages and `lib/` silently stripped
+   `dist/src/lib/`. Shipping built artifacts means no install-time build, so
+   users never grant pnpm's build-script permission - consistent with
+   publish.md's alternative path and this project's trust posture.
+5. A root `pnpm-lock.yaml` (empty importer) so CI's root
+   `pnpm install --frozen-lockfile` still passes.
+
+**Verification** (the push to GitHub was not available from this machine, so
+the working tree was exported verbatim into a bare repo at
+`/tmp/dsh-bridge-sim.git`; `git+file:` exercises the identical pnpm git-hosted
+code path as `github:` minus the hostname):
+
+```sh
+dsh plugin --profile web remove dsh-bridge
+dsh plugin --profile web add git+file:///tmp/dsh-bridge-sim.git
+# -> no warning; dsh.profile.bundles gains "dsh-bridge";
+#    dsh --profile web --dump-config ends with:
+#      # == dsh-bridge
+#      - id: bridge
+#        name: dsh-bridge
+```
+
+Booting with a probe plugin mounted alongside confirmed registration and
+execution of `/bridge-help`, `/bridge-status`, `/bridge-doctor`, and
+`/bridge-trust list` (now rendering the reviewed-plugins table from the shipped
+cards), zero boot errors. Full unit suite: 252 passing.
+
+One caveat for the README claim: until the coordinator pushes these commits,
+GitHub still serves the old tree and the command will warn-and-not-activate.
+The first push containing this restructure is the moment the documented
+command becomes true for end users.
+
 ## Files changed by this investigation
 
 - `packages/dsh-bridge/src/index.ts` — omit `input` when `usage` is blank

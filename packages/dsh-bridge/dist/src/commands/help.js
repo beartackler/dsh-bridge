@@ -1,0 +1,74 @@
+/**
+ * /bridge-help: one-screen directory of every registered bridge command.
+ *
+ * Per docs/specs/commands/help.md: terse lines, grouped sections, generated
+ * live from the descriptor table handed in by the registry (never a hardcoded
+ * copy), plain markdown that survives being piped into `less`.
+ *
+ * Deliberately not in this slice (later spec work): `/bridge-help <command>`
+ * detail cards and did-you-mean suggestions, both blocked on positional args
+ * reaching command runners (index.ts parseArgs currently forwards --flags
+ * only). The footer therefore points at the repo specs instead of promising a
+ * detail mode that does not exist yet.
+ */
+/**
+ * Fixed group order for the directory. Membership is keyed by the command's
+ * bare name (namespace stripped), so future registrations slot in without
+ * edits here. Groups with no registered commands are skipped rather than
+ * rendered empty, and anything unmapped falls under `FALLBACK_GROUP` so a
+ * registered command can never silently vanish from the listing.
+ */
+const GROUPS = [
+    ["Setup", new Set(["init", "login", "connect", "model", "memory", "mcp", "help"])],
+    ["Catalog", new Set(["browse", "install", "suggest", "trust"])],
+    ["Session", new Set(["compact", "resume"])],
+    ["Code", new Set(["review", "improve", "refactor"])],
+    ["Diagnostics", new Set(["doctor", "status"])],
+];
+const FALLBACK_GROUP = "Other";
+/** Native DSH commands this plugin intentionally does not rebuild (help spec step 4). */
+const NATIVE_COMMANDS = ["/compact", "/theme", "/config", "/export", "/plan"];
+/** Strip the `bridge-` namespace for group lookup. */
+function bareName(name) {
+    return name.replace(/^bridge-/, "");
+}
+/** One table row: display name (with slash), aliases, one-line summary. */
+function rowFor(command) {
+    return [
+        `/${command.name}`,
+        command.aliases.length > 0 ? command.aliases.join(", ") : "-",
+        command.summary,
+    ];
+}
+const TABLE_HEADERS = ["Command", "Aliases", "Summary"];
+/**
+ * Render the full directory. `commands` comes straight from the registry
+ * table at invocation time, so dynamically loaded or unloaded commands change
+ * the very next render (help spec edge case 4).
+ */
+export async function renderHelp(ctx, _args, commands) {
+    void ctx;
+    if (commands.length === 0) {
+        return { markdown: "No bridge commands are registered in this session.\n" };
+    }
+    const blocks = ["### dsh-bridge commands", "Usage: /bridge-help [command]"];
+    const grouped = new Set();
+    for (const [title, names] of GROUPS) {
+        const members = commands.filter((command) => names.has(bareName(command.name)));
+        if (members.length === 0)
+            continue;
+        blocks.push(`### ${title}`);
+        blocks.push(ctx.output.table(TABLE_HEADERS, members.map(rowFor)).trimEnd());
+        for (const member of members)
+            grouped.add(member);
+    }
+    const rest = commands.filter((command) => !grouped.has(command));
+    if (rest.length > 0) {
+        blocks.push(`### ${FALLBACK_GROUP}`);
+        blocks.push(ctx.output.table(TABLE_HEADERS, rest.map(rowFor)).trimEnd());
+    }
+    blocks.push(`Native DSH commands stay as-is: ${NATIVE_COMMANDS.join(" ")}.`);
+    blocks.push("Docs: package README and per-command specs in docs/specs/commands/.");
+    return { markdown: `${blocks.join("\n\n")}\n` };
+}
+//# sourceMappingURL=help.js.map

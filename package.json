@@ -1,0 +1,40 @@
+{
+  "name": "dsh-bridge",
+  "version": "0.1.0",
+  "description": "Familiar-face commands, connectors flow, and the trust layer for DeepSeek Harness, delivered as one DSH plugin.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "packages/dsh-bridge/dist",
+    "tools/scan/dist",
+    "docs/catalog/cards"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "slash-commands",
+    "connectors",
+    "trust-report"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beartackler/dsh-bridge.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

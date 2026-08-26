@@ -48,12 +48,13 @@ Without the scanner build, those tests skip; everything else still runs.
 
 ## Run inside DSH (dev loop)
 
+From an npm install of the harness, overlay-mount this package by path:
+
 ```sh
-pnpm dsh web --patch ./cordis.yml   # overlay mounting this package by path
+dsh --profile web --patch ./cordis.yml
 ```
 
-The overlay snippet ships with phase 2 when the first command goes live.
-Until then the package is exercised through `npm test`.
+Inside a harness source checkout the pnpm-script form (`pnpm dsh web --patch ...`) applies instead. For the user-facing install path see the repo root README: the repository ships built artifacts at its root manifest, so `dsh plugin --profile web add github:beartackler/dsh-bridge` needs no local build.
 
 ## Conventions this package enforces
 

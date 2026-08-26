@@ -32,11 +32,25 @@ dsh-bridge is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 
 ## Install
 
+Requires [pnpm](https://pnpm.io) 10 or newer on your PATH (`dsh plugin` manages profile dependencies through it).
+
 ```bash
 dsh plugin --profile web add github:beartackler/dsh-bridge
 ```
 
-Not yet functional. That command is the target shape, proven by existing plugins such as dsh-ponytail. Specs and audits are real today; the runtime is not.
+The repository ships its compiled `dist/` output, so nothing builds on your machine at install time and dsh asks for no build-script permission. To make sure a later push cannot silently change what runs, pin a commit:
+
+```bash
+dsh plugin --profile web add "github:beartackler/dsh-bridge#<commit-sha>"
+```
+
+Then boot and use `/bridge-help` inside DSH:
+
+```bash
+dsh --profile web        # serves http://127.0.0.1:3080
+```
+
+Verified against `@deepseek-ai/dsh` 0.1.1-rc.2: a fresh install from a git checkout activates the bundle with no warnings and all 17 commands register ([how this was verified](docs/research/live-mount-report.md)).
 
 ## Verified catalog
 

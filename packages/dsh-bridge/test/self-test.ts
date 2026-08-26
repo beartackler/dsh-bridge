@@ -14,7 +14,8 @@
  */
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -56,6 +57,20 @@ interface BridgeCommandShape {
   ) => Promise<{ readonly markdown: string; readonly data?: unknown }>;
 }
 const { makeBridgeContext } = await import(`${dist}/lib/context.js`);
+const {
+  BrowseError,
+  extractGrade,
+  filterEntries,
+  loadCardGrades,
+  loadManifest,
+  loadManifestCached,
+  pageCount,
+  pageSlice,
+  repoBase,
+  resolveCatalogPaths,
+  runBrowse,
+  sortEntries,
+} = await import(`${dist}/commands/browse.js`);
 
 /** Repo root, derived from this compiled file (dist/test -> package -> packages). */
 const scannerEntry = resolveScannerEntry();
@@ -462,15 +477,14 @@ describe("plugin entry (index)", () => {
     }
   });
 
-  it("runs stub commands through the injected context and renders markdown", async () => {
+  it("runs commands through the injected context and renders markdown", async () => {
     const ctx = makeTestContext("myprofile");
-    const help = bridgeCommandTable(ctx).find((command: BridgeCommandShape) => command.name === "bridge-help");
-    assert.ok(help);
-    const result = await help.run(ctx, {});
+    // Every table row is implemented now; connect exercises the full path.
+    const connect = bridgeCommandTable(ctx).find((command: BridgeCommandShape) => command.name === "bridge-connect");
+    assert.ok(connect);
+    const result = await connect.run(ctx, {});
     assert.equal(typeof result.markdown, "string");
     assert.ok(result.markdown.length > 0);
-    assert.ok(result.markdown.includes("myprofile"));
-    assert.ok(result.data === undefined);
   });
 
   it("renders handler results through the registration adapter", async () => {
@@ -493,5 +507,615 @@ describe("plugin entry (index)", () => {
     assert.equal(outcome.kind, "success");
     assert.equal(typeof outcome.text, "string");
     assert.ok((outcome.text ?? "").length > 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. /bridge-help command
+// ---------------------------------------------------------------------------
+describe("commands/help", async () => {
+  const { renderHelp } = await import(`${dist}/commands/help.js`);
+  type RenderHelp = (
+    ctx: ReturnType<typeof makeTestContext>,
+    args: Readonly<Record<string, string>>,
+    commands: readonly BridgeCommandShape[],
+  ) => Promise<{ readonly markdown: string; readonly data?: unknown }>;
+
+  it("lists every registered command name in the rendered output", async () => {
+    const ctx = makeTestContext();
+    const registered = bridgeCommandTable(ctx);
+    const result = await (renderHelp as RenderHelp)(ctx, {}, registered);
+    for (const command of registered) {
+      assert.ok(result.markdown.includes(`/${command.name}`), `missing command: /${command.name}`);
+      assert.ok(result.markdown.includes(command.summary), `missing summary: ${command.summary}`);
+    }
+  });
+
+  it("renders aliases and a usage line plus a docs pointer", async () => {
+    const ctx = makeTestContext();
+    const withAlias: BridgeCommandShape[] = [
+      ...bridgeCommandTable(ctx),
+      {
+        name: "bridge-model",
+        aliases: ["bridge-route"],
+        summary: "Show or switch the active model route",
+        usage: "[name]",
+        run: async () => ({ markdown: "" }),
+      },
+    ];
+    const result = await (renderHelp as RenderHelp)(ctx, {}, withAlias);
+    assert.match(result.markdown, /^Usage: \/bridge-help \[command\]$/m);
+    assert.ok(result.markdown.includes("bridge-route"), "alias must appear");
+    assert.ok(result.markdown.includes("docs/specs/commands"), "must point to docs");
+  });
+
+  it("groups sections as Setup, Catalog, Diagnostics and skips empty groups", async () => {
+    const ctx = makeTestContext();
+    // bridge-doctor maps to Diagnostics; no registered command maps to Catalog yet.
+    const onlyDiagnostics: BridgeCommandShape[] = [
+      {
+        name: "bridge-doctor",
+        aliases: [],
+        summary: "Check node runtime, credentials, profiles",
+        usage: "[--net] [--probe]",
+        run: async () => ({ markdown: "" }),
+      },
+    ];
+    const result = await (renderHelp as RenderHelp)(ctx, {}, onlyDiagnostics);
+    assert.match(result.markdown, /^### Diagnostics$/m);
+    assert.doesNotMatch(result.markdown, /^### Catalog$/m);
+
+    const full = await (renderHelp as RenderHelp)(ctx, {}, bridgeCommandTable(ctx));
+    assert.match(full.markdown, /^### Setup$/m);
+    assert.match(full.markdown, /^### Diagnostics$/m);
+  });
+
+  it("renders an unknown command under Other instead of dropping it", async () => {
+    const ctx = makeTestContext();
+    const unmapped: BridgeCommandShape[] = [
+      {
+        name: "bridge-mystery",
+        aliases: [],
+        summary: "Not in any fixed group",
+        usage: "",
+        run: async () => ({ markdown: "" }),
+      },
+    ];
+    const result = await (renderHelp as RenderHelp)(ctx, {}, unmapped);
+    assert.match(result.markdown, /^### Other$/m);
+    assert.ok(result.markdown.includes("/bridge-mystery"));
+  });
+
+  it("handles an empty registry without throwing", async () => {
+    const ctx = makeTestContext();
+    const result = await (renderHelp as RenderHelp)(ctx, {}, []);
+    assert.equal(typeof result.markdown, "string");
+    assert.ok(result.markdown.length > 0);
+    assert.ok(!result.markdown.includes("| Command |"), "no table when nothing is registered");
+  });
+
+  it("stays ASCII-only and emoji-free", async () => {
+    const ctx = makeTestContext();
+    const result = await (renderHelp as RenderHelp)(ctx, {}, bridgeCommandTable(ctx));
+    for (const char of result.markdown) {
+      const code = char.codePointAt(0) ?? 0;
+      assert.ok(code <= 127, `non-ASCII leaked into help output: ${char}`);
+    }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// 6. Browse: fixture manifest, grade join, pagination math
+// ---------------------------------------------------------------------------
+
+interface FixtureEntry {
+  name: string;
+  repo: string;
+  category?: string;
+  stars_if_known?: number | null;
+  description_en?: string;
+}
+
+function writeFixture(dir: string, entries: FixtureEntry[]): { manifestPath: string; cardsDir: string } {
+  const manifestPath = join(dir, "manifest.json");
+  const cardsDir = join(dir, "cards");
+  mkdirSync(cardsDir, { recursive: true });
+  writeFileSync(manifestPath, JSON.stringify(entries), "utf8");
+  return { manifestPath, cardsDir };
+}
+
+function appendFixtureEntry(manifestPath: string, value: FixtureEntry): void {
+  const current = JSON.parse(readFileSync(manifestPath, "utf8")) as unknown[];
+  current.push(value);
+  writeFileSync(manifestPath, JSON.stringify(current), "utf8");
+}
+
+function cardWith(repoLink: string, grade = "B", extraLinks: string[] = []): string {
+  const links = [repoLink, ...extraLinks].map((link) => `- upstream: https://github.com/${link}`).join("\n");
+  return `# Trust Report Card\n\n| | |\n|---|---|\n| **Grade** | **${grade}** (adjudicated) |\n| **Plugin** | fixture |\n\n${links}\n`;
+}
+
+/** Fifteen memory entries plus four others => pages of 3/2 for the runner tests. */
+function fixtureCatalog(): { manifestPath: string; cardsDir: string } {
+  const dir = scratchDir("dshb-browse-run-");
+  const paths = writeFixture(dir, [
+    { name: "owner/alpha-plugin", repo: "owner/alpha-plugin", category: "tools", stars_if_known: 300, description_en: "Alpha does alpha things." },
+    { name: "owner/beta-pack", repo: "owner/beta-pack", category: "ui", stars_if_known: 1500, description_en: "Beta polishes panels." },
+    { name: "owner/gamma-mem", repo: "owner/gamma-mem", category: "memory", stars_if_known: null, description_en: "Gamma recalls context." },
+    { name: "owner/delta-ui", repo: "owner/delta-ui#packages/widget", category: "ui", stars_if_known: 40, description_en: "Delta widgets." },
+  ]);
+  for (let index = 0; index < 11; index += 1) {
+    appendFixtureEntry(paths.manifestPath, {
+      name: `owner/mem-${String(index).padStart(2, "0")}`,
+      repo: `owner/mem-${String(index).padStart(2, "0")}`,
+      category: "memory",
+      stars_if_known: index,
+      description_en: `Memory plugin number ${index}.`,
+    });
+  }
+  writeFileSync(join(paths.cardsDir, "alpha.md"), cardWith("owner/alpha-plugin", "A"), "utf8");
+  writeFileSync(join(paths.cardsDir, "delta.md"), cardWith("owner/delta-ui/packages/widget", "C"), "utf8");
+  return paths;
+}
+
+describe("browse catalog loading", () => {
+  it("parses the real manifest shape into typed entries and drops malformed rows", () => {
+    const dir = scratchDir("dshb-browse-load-");
+    const { manifestPath } = writeFixture(dir, [
+      { name: "a/dsh-alpha", repo: "a/dsh-alpha", category: "ui", stars_if_known: 12, description_en: "Alpha tools." },
+      { name: "b/dsh-beta", repo: "b/dsh-beta", category: "tools", stars_if_known: null, description_en: "Beta." },
+      { broken: true } as unknown as FixtureEntry,
+      null as unknown as FixtureEntry,
+    ]);
+    const entries = loadManifest(manifestPath);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0]?.name, "a/dsh-alpha");
+    assert.equal(entries[0]?.stars, 12);
+    assert.equal(entries[1]?.stars, null);
+  });
+
+  it("errors gracefully on a missing or corrupt manifest file", () => {
+    assert.throws(() => loadManifest("/definitely/absent/manifest.json"), BrowseError);
+    const dir = scratchDir("dshb-browse-corrupt-");
+    const badPath = join(dir, "manifest.json");
+    writeFileSync(badPath, "{ not json", "utf8");
+    assert.throws(() => loadManifest(badPath), BrowseError);
+    const objPath = join(dir, "object.json");
+    writeFileSync(objPath, JSON.stringify({ oops: true }), "utf8");
+    assert.throws(() => loadManifest(objPath), BrowseError);
+  });
+
+  it("memoizes loads per path+mtime and reloads after a change", async () => {
+    const dir = scratchDir("dshb-browse-cache-");
+    const { manifestPath } = writeFixture(dir, [{ name: "x/one", repo: "x/one" }]);
+    const first = loadManifestCached(manifestPath);
+    const second = loadManifestCached(manifestPath);
+    assert.equal(first, second, "same file state must reuse parsed entries");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    writeFixture(dir, [
+      { name: "x/one", repo: "x/one" },
+      { name: "x/two", repo: "x/two" },
+    ]);
+    const third = loadManifestCached(manifestPath);
+    assert.notEqual(first, third);
+    assert.equal(third.length, 2);
+  });
+
+  it("resolves docs/catalog by walking up from the compiled module", () => {
+    const found = resolveCatalogPaths();
+    assert.ok(found, "catalog must exist in this repo checkout");
+    assert.match(found!.manifestPath, /docs[/\\]catalog[/\\]manifest\.json$/);
+  });
+});
+
+describe("browse grade join", () => {
+  it("extracts grades from both committed card formats and rejects table headers", () => {
+    assert.equal(extractGrade("| **Grade** | **C** (manual adjudication; raw scanner output: F) |"), "C");
+    assert.equal(extractGrade("| Grade | **B** (scanner raw output F; adjudicated per pipeline S6 with evidence) |"), "B");
+    assert.equal(extractGrade("### Overall: C"), "C");
+    assert.equal(extractGrade("### Overall: **A**"), "A");
+    // Revision-history headers must never yield a phantom letter.
+    assert.equal(extractGrade("| Rev | Date | Subject | Grade | Change |"), null);
+    assert.equal(extractGrade("no grade here"), null);
+  });
+
+  it("cuts subpath repos to their owner/repo base for the join key", () => {
+    assert.equal(repoBase("tt-a1i/archify#integrations/deepseek-harness"), "tt-a1i/archify");
+    assert.equal(repoBase("Some-Owner/Repo.Name.git"), "some-owner/repo.name");
+    assert.equal(repoBase("solo"), "solo");
+  });
+
+  it("joins a card onto exactly one known repo base and skips ambiguous links", () => {
+    const dir = scratchDir("dshb-browse-cards-");
+    const known = new Set(["a/alpha", "b/beta"]);
+    writeFileSync(join(dir, "alpha.md"), cardWith("a/alpha", "A"), "utf8");
+    writeFileSync(join(dir, "beta.md"), cardWith("unknown/repo", "F", ["other/thing"]), "utf8");
+    const grades = loadCardGrades(dir, known);
+    assert.equal(grades.get("a/alpha"), "A");
+    assert.equal(grades.size, 1, "unresolvable cards contribute nothing");
+  });
+
+  it("treats an absent cards directory as all-unreviewed instead of failing", () => {
+    const grades = loadCardGrades(join(scratchDir("dshb-browse-nocards-"), "missing"), new Set(["a/alpha"]));
+    assert.equal(grades.size, 0);
+  });
+});
+
+describe("browse filtering and pagination math", () => {
+  interface SampleEntry {
+    name: string;
+    repo: string;
+    category: string;
+    stars: number | null;
+    description: string;
+  }
+  function entry(name: string, category: string, stars: number | null, description: string): SampleEntry {
+    return { name, repo: name, category, stars, description };
+  }
+  function sample(): SampleEntry[] {
+    return [
+      entry("zeta/tools", "tools", 500, "Zeta build tooling"),
+      entry("alpha/ui", "ui", 1200, "Alpha UI pack"),
+      entry("memory-helper", "memory", 42, "Remember things across sessions"),
+      entry("quiet/ui", "ui", null, "Quiet UI tweaks"),
+      entry("MemoryMirror", "memory", 7, "A mirror for your memory notes"),
+    ];
+  }
+
+  it("sorts deterministically: stars desc, unknown last, then name asc", () => {
+    const sorted = sortEntries(sample());
+    assert.deepEqual(
+      sorted.map((e: { name: string }) => e.name),
+      ["alpha/ui", "zeta/tools", "memory-helper", "MemoryMirror", "quiet/ui"],
+    );
+  });
+
+  it("filters by category exactly", () => {
+    const ui = filterEntries(sample(), { category: "ui" });
+    assert.deepEqual(ui.map((e: { name: string }) => e.name), ["alpha/ui", "quiet/ui"]);
+  });
+
+  it("matches find queries case-insensitively across name and description", () => {
+    const hitName = filterEntries(sample(), { query: "MEMORYMIRROR" });
+    assert.deepEqual(hitName.map((e: { name: string }) => e.name), ["MemoryMirror"]);
+    const hitDesc = filterEntries(sample(), { query: "across sessions" });
+    assert.deepEqual(hitDesc.map((e: { name: string }) => e.name), ["memory-helper"]);
+  });
+
+  it("returns nothing on a miss without inventing results", () => {
+    assert.equal(filterEntries(sample(), { query: "nonexistent-widget" }).length, 0);
+  });
+
+  it("computes page counts for every boundary (pagination math)", () => {
+    assert.equal(pageCount(0), 1);
+    assert.equal(pageCount(1), 1);
+    assert.equal(pageCount(10), 1);
+    assert.equal(pageCount(11), 2);
+    assert.equal(pageCount(25), 3);
+  });
+
+  it("slices full, partial, and empty pages correctly", () => {
+    const twentyThree = Array.from({ length: 23 }, (_, index) => entry(`p-${index}`, "tools", index, `plugin ${index}`));
+    assert.equal(pageSlice(twentyThree, 1).length, 10);
+    assert.equal(pageSlice(twentyThree, 3).length, 3);
+    assert.deepEqual(pageSlice(twentyThree, 4), []);
+    assert.equal(pageSlice(twentyThree, 2)[0]?.name, "p-10");
+
+    // find over a paginated fixture: "plugin 2" matches p-2, p-20..p-23 -> 4 hits.
+    const hits = filterEntries(twentyThree, { query: "plugin 2" });
+    assert.equal(hits.length, 4);
+  });
+});
+
+describe("browse command runner", () => {
+  it("lists page 1 with names, categories, stars, joined grades, and descriptions", async () => {
+    const ctx = makeTestContext("browse");
+    const result = await runBrowse(ctx as never, { _: "" }, fixtureCatalog());
+    assert.match(result.markdown, /15 entries/);
+    assert.match(result.markdown, /page 1\/2/);
+    const rows = result.markdown.split("\n").filter((line: string) => line.includes("| owner/"));
+    assert.equal(rows.length, 10);
+    assert.ok(rows.some((row: string) => row.includes("| A |")), "graded row shows its letter");
+    assert.ok(rows.some((row: string) => row.includes("owner/beta-pack")));
+  });
+
+  it("paginates via explicit page number, next, prev, clamped at edges", async () => {
+    const ctx = makeTestContext("browse");
+    const options = fixtureCatalog();
+
+    const page2 = await runBrowse(ctx as never, { _: "2" }, options);
+    assert.match(page2.markdown, /page 2\/2/);
+    assert.equal(page2.markdown.split("\n").filter((line: string) => line.includes("| owner/")).length, 5);
+
+    const nextFromTwo = await runBrowse(ctx as never, { _: "next" }, options);
+    assert.match(nextFromTwo.markdown, /page 2\/2/, "next at the last page stays put");
+    const prevFromTwo = await runBrowse(ctx as never, { _: "prev" }, options);
+    assert.match(prevFromTwo.markdown, /page 1\/2/, "prev uses the remembered list page");
+    const badPage = await runBrowse(ctx as never, { _: "9" }, options);
+    assert.match(badPage.markdown, /page must be 1-2/);
+  });
+
+  it("finds case-insensitive substrings across name and description", async () => {
+    const ctx = makeTestContext("browse");
+    const options = fixtureCatalog();
+    const hit = await runBrowse(ctx as never, { _: "find BETA POLISHES" }, options);
+    assert.match(hit.markdown, /find "BETA POLISHES" - 1 match/);
+    assert.match(hit.markdown, /owner\/beta-pack/);
+
+    const miss = await runBrowse(ctx as never, { _: "find zzz-nothing" }, options);
+    assert.match(miss.markdown, /No entries match/);
+
+    const noQuery = await runBrowse(ctx as never, { _: "find" }, options);
+    assert.match(noQuery.markdown, /Usage:/);
+  });
+
+  it("filters by category and rejects unknown ones", async () => {
+    const ctx = makeTestContext("browse");
+    const options = fixtureCatalog();
+    const ui = await runBrowse(ctx as never, { _: "ui" }, options);
+    assert.match(ui.markdown, /category=ui - 2 entries/);
+    assert.match(ui.markdown, /page 1\/1/);
+
+    const uiPage2 = await runBrowse(ctx as never, { _: "ui 2" }, options);
+    assert.match(uiPage2.markdown, /page must be 1-1/, "out-of-range page names the valid range instead of guessing");
+
+    const unknown = await runBrowse(ctx as never, { _: "not-a-cat" }, options);
+    assert.match(unknown.markdown, /Unknown category/);
+    assert.match(unknown.markdown, /Valid: /);
+  });
+
+  it("renders unreviewed entries with ? when no card exists", async () => {
+    const ctx = makeTestContext("browse");
+    // gamma-mem has null stars, so it sorts to page 2 under unknown-last order.
+    const result = await runBrowse(ctx as never, { _: "2" }, fixtureCatalog());
+    const gammaRow = result.markdown.split("\n").find((line: string) => line.includes("owner/gamma-mem"));
+    assert.ok(gammaRow);
+    assert.match(gammaRow!, /\| \? \|/);
+  });
+
+  it("handles a missing manifest gracefully with honest output, not a crash", async () => {
+    const ctx = makeTestContext("browse");
+    const result = await runBrowse(ctx as never, {}, { manifestPath: "/definitely/not/here.json" });
+    assert.match(result.markdown, /Catalog is unavailable/);
+    assert.match(result.markdown, /not readable/);
+  });
+
+  it("keeps every rendered byte ASCII and emoji-free", async () => {
+    const ctx = makeTestContext("browse");
+    const result = await runBrowse(ctx as never, { _: "" }, fixtureCatalog());
+    for (const char of result.markdown) {
+      const code = char.codePointAt(0) ?? 0;
+      assert.ok(code <= 127, `non-ASCII leaked into browse output: ${char}`);
+    }
+  });
+
+  it("exposes structured data for tests and future panels", async () => {
+    const ctx = makeTestContext("browse");
+    const result = await runBrowse(ctx as never, { _: "find mem" }, fixtureCatalog());
+    const data = result.data as { mode: string; total: number; pages: number };
+    assert.equal(data.mode, "find");
+    assert.equal(data.total, 12);
+    assert.equal(data.pages, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. /connect phase 1: detection, masking, reachability
+// ---------------------------------------------------------------------------
+const { detectCredentials, parseConnectArgs, runConnect, testProviderReachability } = await import(
+  `${dist}/commands/connect.js`
+);
+
+/** Structural echo of DetectionRow for typed callbacks in this file. */
+interface DetectionRowShape {
+  readonly provider: string;
+  readonly source: string;
+  readonly status: string;
+  readonly detail: string;
+}
+interface ReachabilityStepShape {
+  readonly step: "dns" | "tcp";
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** A secret-shaped fixture value; tests assert this never reaches output. */
+const FIXTURE_SECRET = "sk-ant-api99-Zx4Qw8Er6Ty1UiOpAsDf";
+
+function connectContext(home: string, dshHome: string) {
+  return makeBridgeContext({
+    profile: "web",
+    paths: {
+      home,
+      dshHome,
+      profilePatch: profilePatchPath("web", dshHome),
+      profilePackageJson: profilePackageJsonPath("web", dshHome),
+    },
+    output: { table, card, badge },
+  });
+}
+
+function writeHomeFile(home: string, relative: string, contents: string): string {
+  const target = join(home, relative);
+  mkdirSync(join(target, ".."), { recursive: true });
+  writeFileSync(target, contents, "utf8");
+  return target;
+}
+
+const FUTURE_MS = Date.now() + 7 * 24 * 60 * 60 * 1000;
+const PAST_MS = Date.now() - 24 * 60 * 60 * 1000;
+
+describe("connect detection", () => {
+  it("reports every source as not found on an empty fixture HOME", () => {
+    const home = scratchDir("dshb-connect-empty-");
+    const rows = detectCredentials(connectContext(home, join(home, ".dsh")), {});
+    assert.ok(rows.length >= 9);
+    for (const matrixRow of rows) {
+      assert.equal(matrixRow.status, "not found", `${matrixRow.source} should be not found`);
+    }
+  });
+
+  it("marks a valid Claude OAuth file found and an expired one expired (A3)", () => {
+    const home = scratchDir("dshb-connect-claude-");
+    writeHomeFile(
+      home,
+      ".claude/.credentials.json",
+      JSON.stringify({ claudeAiOauth: { accessToken: FIXTURE_SECRET, refreshToken: "rt", expiresAt: FUTURE_MS } }),
+    );
+    const fresh = detectCredentials(connectContext(home, join(home, ".dsh")), {}).find((r: DetectionRowShape) => r.source.includes(".credentials.json"));
+    assert.equal(fresh?.status, "found");
+
+    const staleHome = scratchDir("dshb-connect-stale-");
+    writeHomeFile(
+      staleHome,
+      ".claude/.credentials.json",
+      JSON.stringify({ claudeAiOauth: { accessToken: FIXTURE_SECRET, refreshToken: "rt", expiresAt: PAST_MS } }),
+    );
+    const stale = detectCredentials(connectContext(staleHome, join(staleHome, ".dsh")), {}).find((r: DetectionRowShape) =>
+      r.source.includes(".credentials.json"),
+    );
+    assert.equal(stale?.status, "expired");
+  });
+
+  it("classifies codex and gemini OAuth files by shape, including epoch-second expiry", () => {
+    const home = scratchDir("dshb-connect-codexgem-");
+    writeHomeFile(home, ".codex/auth.json", JSON.stringify({ tokens: { access_token: "at", expiresAt: Math.floor(PAST_MS / 1000) } }));
+    writeHomeFile(home, ".gemini/oauth_creds.json", JSON.stringify({ access_token: "at", expiry_date: FUTURE_MS }));
+    const rows = detectCredentials(connectContext(home, join(home, ".dsh")), {});
+    assert.equal(rows.find((r: DetectionRowShape) => r.source.includes("codex"))?.status, "expired");
+    assert.equal(rows.find((r: DetectionRowShape) => r.source.includes("gemini"))?.status, "found");
+  });
+
+  it("reports env keys found with masked detail, missing ones as not found", () => {
+    const home = scratchDir("dshb-connect-env-");
+    const rows = detectCredentials(connectContext(home, join(home, ".dsh")), {
+      ANTHROPIC_API_KEY: FIXTURE_SECRET,
+      DEEPSEEK_API_KEY: "sk-short9ke",
+    });
+    const anthropic = rows.find((r: DetectionRowShape) => r.source === "$ANTHROPIC_API_KEY");
+    assert.equal(anthropic?.status, "found");
+    assert.match(anthropic?.detail ?? "", /\u2026/);
+    const deepseek = rows.find((r: DetectionRowShape) => r.source === "$DEEPSEEK_API_KEY");
+    assert.equal(deepseek?.status, "malformed");
+    assert.equal(deepseek?.detail, "placeholder-like value");
+    assert.equal(rows.find((r: DetectionRowShape) => r.source === "$OPENAI_API_KEY")?.status, "not found");
+  });
+
+  it("expands the opencode map into per-provider rows without leaking values (E5)", () => {
+    const home = scratchDir("dshb-connect-open-");
+    process.env["XDG_DATA_HOME"] = join(home, "xdgdata");
+    try {
+      writeHomeFile(join(home, "xdgdata"), "opencode/auth.json", JSON.stringify({ anthropic: { type: "api", key: FIXTURE_SECRET } }));
+      const rows = detectCredentials(connectContext(home, join(home, ".dsh")), {});
+      const row = rows.find((r: DetectionRowShape) => r.source.includes("via opencode"));
+      assert.ok(row);
+      assert.equal(row.provider, "anthropic");
+      assert.equal(row.status, "found");
+    } finally {
+      delete process.env["XDG_DATA_HOME"];
+    }
+  });
+
+  it("degrades a malformed opencode map to one malformed row showing the path only (E7)", () => {
+    const home = scratchDir("dshb-connect-brokenmap-");
+    process.env["XDG_DATA_HOME"] = join(home, "xdgdata");
+    try {
+      writeHomeFile(join(home, "xdgdata"), "opencode/auth.json", "{ truncated json");
+      const rows = detectCredentials(connectContext(home, join(home, ".dsh")), {});
+      const row = rows.find((r: DetectionRowShape) => r.provider === "opencode");
+      assert.equal(row?.status, "malformed");
+    } finally {
+      delete process.env["XDG_DATA_HOME"];
+    }
+  });
+
+  it("renders the full matrix through the command runner with masked output only (A2)", async () => {
+    const home = scratchDir("dshb-connect-run-");
+    writeHomeFile(home, ".codex/auth.json", JSON.stringify({ tokens: { access_token: FIXTURE_SECRET, expiresAt: PAST_MS } }));
+    writeHomeFile(home, ".dsh/.env", `DEEPSEEK_API_KEY=${FIXTURE_SECRET}\n`);
+    const ctx = connectContext(home, join(home, ".dsh"));
+
+    const result = await runConnect(ctx, {});
+    assert.ok(result.markdown.includes("PROVIDER | SOURCE | STATUS | DETAIL"));
+    assert.ok(result.markdown.includes("~/.claude/.credentials.json"));
+    assert.ok(result.markdown.includes("expired"));
+    assert.ok(result.markdown.includes("defines DEEPSEEK_API_KEY"));
+    assert.ok(!result.markdown.includes(FIXTURE_SECRET), "fixture secret leaked into markdown");
+    assert.equal(typeof result.data, "object");
+  });
+
+  it("never leaks the fixture secret through any rendered row or data payload (A6 spot check)", async () => {
+    const home = scratchDir("dshb-connect-leak-");
+    process.env["XDG_DATA_HOME"] = join(home, "xdgdata");
+    try {
+      writeHomeFile(home, ".claude/.credentials.json", JSON.stringify({ claudeAiOauth: { accessToken: FIXTURE_SECRET } }));
+      writeHomeFile(join(home, "xdgdata"), "opencode/auth.json", JSON.stringify({ openai: { type: "api", key: FIXTURE_SECRET } }));
+      const result = await runConnect(connectContext(home, join(home, ".dsh")), {});
+      const rendered = `${result.markdown}\n${JSON.stringify(result.data)}`;
+      assert.ok(!rendered.includes(FIXTURE_SECRET));
+      assert.ok(!rendered.includes(FIXTURE_SECRET.slice(0, -4)), "more than last 4 chars disclosed");
+    } finally {
+      delete process.env["XDG_DATA_HOME"];
+    }
+  });
+});
+
+describe("connect arg parsing", () => {
+  it("defaults to list mode", () => {
+    assert.deepEqual(parseConnectArgs({}), { mode: "list" });
+  });
+  it("parses test <provider> case-insensitively", () => {
+    assert.deepEqual(parseConnectArgs({ _: "test", rest: "DeepSeek" }), { mode: "test", provider: "deepseek" });
+  });
+  it("rejects test without a provider and unknown verbs", () => {
+    assert.throws(() => parseConnectArgs({ _: "test" }), /usage/);
+    assert.throws(() => parseConnectArgs({ _: "wat" }), /usage/);
+  });
+});
+
+describe("connect reachability smoke", () => {
+  it("resolves and connects to a loopback listener end to end", async () => {
+    const server = createServer();
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("no tcp address");
+    try {
+      const outcome = await testProviderReachability("deepseek", {
+        timeoutMs: 2000,
+        target: { host: address.address, port: address.port, label: "loopback" },
+      });
+      assert.equal(outcome.ok, true);
+      assert.deepEqual(outcome.steps.map((step: ReachabilityStepShape) => step.step).sort(), ["dns", "tcp"]);
+      assert.match(outcome.steps[0]?.detail ?? "", /^resolved /);
+      assert.match(outcome.steps[1]?.detail ?? "", /open in \d+ ms/);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("fails cleanly when DNS cannot resolve", async () => {
+    const outcome = await testProviderReachability("openai", {
+      timeoutMs: 1000,
+      target: { host: "nonexistent.invalid.dsh-bridge.test", port: 443, label: "invalid" },
+    });
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.steps.length, 1);
+    assert.equal(outcome.steps[0]?.step, "dns");
+    assert.equal(outcome.steps[0]?.ok, false);
+  });
+
+  it("refuses unknown providers instead of guessing", async () => {
+    await assert.rejects(() => testProviderReachability("not-a-provider"), /unknown provider/);
+  });
+
+  it("runs through the command runner and keeps output ASCII-only", async () => {
+    const home = scratchDir("dshb-connect-testcmd-");
+    const result = await runConnect(connectContext(home, join(home, ".dsh")), { _: "test", rest: "deepseek" });
+    assert.ok(result.markdown.includes("DNS/TCP only; no credentials transmitted"));
+    for (const char of result.markdown) {
+      const code = char.codePointAt(0) ?? 0;
+      assert.ok(code <= 127, `non-ASCII leaked into connect output: ${char}`);
+    }
   });
 });

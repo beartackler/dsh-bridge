@@ -127,9 +127,17 @@ function registerCommand(ctx: Context, command: BridgeCommand, bridgeContext: Br
   });
 }
 
-/** Minimal `--flag value` splitter shared by stubs until real parsers land. */
+/**
+ * Minimal `--flag value` splitter with positional capture.
+ *
+ * Positional words accumulate into `_` (the first word, e.g. a subcommand like
+ * `scan` or `list`) and `rest` (everything after it), so command modules can
+ * route on the verb without re-parsing. Flags still win: a token following
+ * `--flag` is its value, never a positional.
+ */
 function parseArgs(rawInput: string): Record<string, string> {
   const args: Record<string, string> = {};
+  const positionals: string[] = [];
   let current: string | null = null;
   for (const token of rawInput.trim().split(/\s+/).filter((token) => token !== "")) {
     if (token.startsWith("--")) {
@@ -138,7 +146,14 @@ function parseArgs(rawInput: string): Record<string, string> {
     } else if (current !== null) {
       args[current] = token;
       current = null;
+    } else {
+      positionals.push(token);
     }
+  }
+  if (positionals.length > 0) {
+    const [first, ...rest] = positionals;
+    if (first !== undefined) args["_"] = first;
+    if (rest.length > 0) args["rest"] = rest.join(" ");
   }
   return args;
 }

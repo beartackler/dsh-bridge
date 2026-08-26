@@ -90,7 +90,7 @@ Claude Code ships `claude mcp add/remove/list/get` (scoped configs), an in-sessi
 | G5 | Transports: no SSE; HTTP is Streamable-only | `transport: 'stdio' \| 'streamable-http'` exhaustive (`index.ts:107-128`) | Legacy SSE endpoints unusable; must be surfaced honestly |
 | G6 | Tools-only bridging | Resources/Prompts deferred (`README.md:113`) | Resource-heavy servers appear "empty"; prompts don't become commands |
 | G7 | No OAuth/auth flow for HTTP | Only static `headers` (`index.ts:86-88`) | Token-refresh servers need manual token plumbing |
-| G8 | No connection/discovery timeout knob | Inherited SDK 60s default (`README.md:114`) | Stalls delay activation/teardown; probes need their own deadline |
+| G8 | No connection/discovery timeout knob | Inherited SDK 60s default (`README.md:114`) | Stalls delay activation/teardown; observable symptom: boot or Settings mount can hang up to ~60s per unreachable server (each initialize / paginated `tools/list` waits out the SDK default); probes need their own deadline |
 | G9 | No secret store seam for MCP rows | `env`/`headers` are plaintext-or-`!!js`; scrubbing protects children from ambient secrets but the row itself holds literals unless users know the idiom | Secret-hygiene burden on the writer |
 | G10 | Enable/disable requires delete-or-comment | A patch row `{id, disabled: true}` exists as a mechanism (telemetry switch uses it, `profile-boot.ts:80-83`) but nothing exposes it for MCP | Toggle UX is free to build — opportunity |
 | G11 | No scoped/project sharing story | Overlays exist (`--patch`) but no convention for a repo-committed MCP set like `.mcp.json` | Team-shared configs are ad hoc |
@@ -121,3 +121,9 @@ The spec's factual base checks out (transports, naming, defaults, scrubbed-env, 
 
 - Does `ctx.remote.pluginInventory.list()` distinguish mcp-client rows enough for a future `/mcp` Web panel (entry `name` is visible in effective config), or would we need a tiny remote contribution?
 - Is there a supported programmatic hot-add path (dynamic composition runner) short of editing the watched patch file? None found in this pass; the watched-file path is sufficient either way.
+
+---
+
+## Revision 1 (2026-08-26)
+
+- G8's Impact cell now names the observable symptom (boot or Settings mount hanging up to ~60s per unreachable server), so spec acceptance tests can assert it (`../reviews/research-docs-review.md`, File 4 finding 2; symptom wording follows `packages/mcp/mcp-client/README.md` known limitations). Reviewer finding 1 (TL;DR bolded absolute) required no change per the review itself; §2 already carries the honest nuance.

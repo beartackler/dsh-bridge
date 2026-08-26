@@ -15,7 +15,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "cordis.patch.yml"
   ],
   "keywords": [
     "deepseek-harness",
@@ -37,7 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "test": "npm run build && node --test dist/test/self-test.js dist/test/trust-test.js dist/test/connect-test.js dist/test/memory-test.js dist/test/compact-test.js dist/test/resume-test.js"
+    "test": "npm run build && node --test dist/test/self-test.js dist/test/trust-test.js dist/test/connect-test.js dist/test/memory-test.js dist/test/compact-test.js dist/test/resume-test.js dist/test/status-test.js dist/test/model-test.js"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -45,8 +46,14 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^22.7.0",
     "typescript": "^5.6.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }

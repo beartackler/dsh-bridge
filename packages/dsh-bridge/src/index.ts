@@ -27,35 +27,13 @@ import * as output from "./lib/output.js";
 import type { BridgeContext } from "./lib/types.js";
 
 /**
- * Local augmentation for the one host service this plugin consumes.
- *
- * VERIFY(seams-doc §3.1): mirrors CommandRuntime/CommandDefinition from
- * @deepseek-ai/dsh-commands (packages/interaction/commands/src/index.ts),
- * read at the reference checkout on 2026-08-25. The published peer package
- * is not importable from this scaffold yet; when it becomes a devDependency,
- * delete this block and import their types instead.
+ * The `commands` service contract comes from the host package itself
+ * (@deepseek-ai/dsh-commands), which declares `Context.commands` via its own
+ * module augmentation. Importing it for the side effect keeps that contract
+ * in one place: the harness's, not a copy of ours. Verified against the live
+ * runtime (dsh 0.1.1-rc.2) in docs/research/live-mount-report.md.
  */
-declare module "@deepseek-ai/cordis" {
-  interface Context {
-    readonly commands: {
-      register(definition: {
-        name: string;
-        description: string;
-        input?: { hint: string };
-        handler: (invocation: {
-          commandId: unknown;
-          agent: unknown;
-          rawInput: string;
-          attachments: readonly unknown[];
-          signal: AbortSignal;
-        }) =>
-          | { kind: "success"; text?: string }
-          | { kind: "error"; text: string }
-          | Promise<{ kind: "success"; text?: string } | { kind: "error"; text: string }>;
-      }): void;
-    };
-  }
-}
+import type {} from "@deepseek-ai/dsh-commands";
 
 export const name = "dsh-bridge";
 
@@ -113,10 +91,15 @@ export function apply(ctx: Context, config: Config): void {
  * `{ kind: 'success' | 'error', text }`, never sent to the model.
  */
 function registerCommand(ctx: Context, command: BridgeCommand, bridgeContext: BridgeContext): void {
+  // The host rejects a present-but-blank hint outright (verified against the
+  // live runtime: dsh-commands/lib/index.js normalizeDefinition, "input hint
+  // must not be empty"). A command that takes no argument must omit `input`
+  // entirely rather than pass an empty string.
+  const hint = command.usage.trim();
   ctx.commands.register({
     name: command.name,
     description: command.summary,
-    input: { hint: command.usage },
+    ...(hint === "" ? {} : { input: { hint } }),
     handler: async ({ rawInput }: { rawInput: string }) => {
       try {
         const result = await command.run(bridgeContext, parseArgs(rawInput));

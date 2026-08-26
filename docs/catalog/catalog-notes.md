@@ -83,3 +83,58 @@ The median of 2 confirms the charter's low-trust thesis: the long tail is tiny, 
 - 706 entries lack star data simply because upstream hasn't polled them yet; they may still have stars.
 - `category` values are upstream's own taxonomy codes (`ui`, `dev`, …), kept verbatim for traceability. Map to dsh-bridge display categories in a later pass.
 - Sibling artifact `discovered-plugins.json` (same directory) covers GitHub topic-page discovery *outside* the curated list, including an `in_awesome_list` cross-reference; use it to find candidates for future upstream submissions.
+
+## Delta since sweep
+
+Added 2026-08-26 by a GitHub-API discovery pass run against the manifest above.
+
+### Method
+
+- **Discovery:** GitHub Search API (`search/repositories`), sorted by `updated` descending, paged to the API's 1,000-result ceiling per query. Six topic queries (`dsh-plugin`, `dsh-plugins`, `deepseek-harness-plugin`, `deepseek-harness-plugins`, `deepseek-harness`, `dsh-extension`, `dshplugin`) plus four name/description/readme queries. Raw union: **4,309** repos.
+- **Topic filter:** kept only repos carrying at least one plugin-publishing topic (`dsh-plugin`, `dsh-plugins`, `deepseek-harness-plugin(s)`, `dsh-plugin-market`, `dsh-bundle`, `dsh-skill`, `dsh-plugin-desktop`, `dsh-plugin-verify`) — **2,975** repos, of which **589** are already in `manifest.json` and **2,386** are not.
+- **Manifest verification:** the `pushed:`/topic signal alone over-collects, so every one of the 2,386 had its full git tree read via `repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1`. A repo is counted as a plugin only if the tree contains `cordis.patch.yml`, `dsh.plugin.json`, or an `agent`/`preset`.`cordis.yml`. This convention was not assumed — it was learned by first sampling 120 repos already listed upstream, where `cordis.patch.yml` appears in 101 of 120 repo roots.
+- **Deliberately excluded:** **568** topic-tagged repos with no plugin manifest. **461** had no manifest evidence at all (host desktop apps such as `dataelement/dsh-desktop`, competing awesome-lists, unrelated projects like `nocobase/nocobase`) and **107** carried only a vendored `SKILL.md`, a marker weak enough that it matches the upstream awesome-list repo itself. Excluding these is the difference between a 2,386-row list and a defensible one.
+
+### Counts
+
+| Metric | Value |
+|---|---:|
+| Plugin repos not in `manifest.json` | **1,818** |
+| Created after the 2026-08-19 upstream star snapshot | 800 |
+| Created on or before it (missed by the sweep, not new) | 1,018 |
+| Repos pushed in the window 2026-08-13 .. 2026-08-26 | 1,818 (all) |
+| Archived | 5 |
+| No repo description | 166 |
+
+Star distribution of the delta: median **1**, ≥ 100 stars **31**, ≥ 10 stars **124**, exactly 0 stars **584**. This is a thinner-tailed, younger population than the curated list (median 2), which is expected: these are the repos the curation has not reached yet.
+
+Languages: JavaScript 947, TypeScript 757, Python 52, HTML 13, Rust 10, PowerShell 9, Go 5, other/unknown 25.
+
+Category guesses (keyword heuristic over name, description and topics, reusing the upstream 21-category vocabulary):
+
+| Category | Count | | Category | Count |
+|---|---:|---|---|---:|
+| tools | 350 | | theme | 76 |
+| session | 183 | | browser | 76 |
+| model | 159 | | ui | 66 |
+| usage | 111 | | dev | 66 |
+| market | 110 | | notify | 66 |
+| vision | 94 | | skill | 60 |
+| git | 91 | | workflow | 47 |
+| security | 81 | | remote | 39 |
+| memory | 80 | | voice | 28 |
+| | | | fun | 20 |
+| | | | identity | 10 |
+| | | | docs | 5 |
+
+`category_guess` is a heuristic, not upstream taxonomy: `tools` is the fallback bucket and is therefore the largest. Treat it as triage input, not as a final label.
+
+### Output
+
+[`new-since-sweep.json`](./new-since-sweep.json) — 1,818 objects sorted by stars descending, each with `repo`, `url`, `stars`, `language`, `pushed_at`, `created_at`, `description`, `topics`, `archived`, `manifest_evidence`, `category_guess`, `why_interesting`. `manifest_evidence` records which files proved the repo is a plugin, so any entry can be re-verified independently.
+
+### Caveats
+
+- Star counts and `pushed_at` are live values read on 2026-08-26, whereas `manifest.json` stars come from the upstream 2026-08-19 snapshot. Do not compare the two columns directly.
+- GitHub Search caps every query at 1,000 results, so the union is a lower bound. Repos that publish a plugin but carry none of the searched topics are invisible to this pass.
+- Presence of a manifest proves a repo is *shaped* like a plugin. It proves nothing about whether it works or is safe. Per the charter, each still needs its own adversarial review before `/bridge:install` prefers it.

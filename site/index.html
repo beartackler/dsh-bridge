@@ -4,9 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dsh-bridge - verified plugin catalog</title>
+<meta name="description" content="Every DeepSeek Harness plugin that passed the dsh-bridge adversarial trust review, with evidence-backed grades and verdicts.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231e2630'/%3E%3Ctext x='8' y='11.5' font-family='monospace' font-size='10' font-weight='700' text-anchor='middle' fill='%237dd8de'%3Edb%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<a class="skip-link" href="#catalog">Skip to catalog</a>
+
 <header class="site-header">
   <div class="wrap">
     <p class="brand"><a href="index.html">dsh-bridge</a></p>
@@ -14,47 +18,87 @@
   </div>
 </header>
 
-<main class="wrap">
-  <section class="hero">
-    <h1>DeepSeek Harness plugins you can verify before you install.</h1>
-    <p>
+<main class="wrap" id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <h1 id="hero-title">DeepSeek Harness plugins you can verify before you install.</h1>
+    <p class="lede">
       dsh-bridge is a DeepSeek Harness plugin for people arriving from Claude Code, Codex CLI,
       OpenCode, or Jcode: familiar slash commands, guided provider setup, and a curated plugin
       catalog. Every community plugin in that catalog passes an adversarial security review against
       a pinned commit before we recommend it, and each verdict ships as a trust report card citing
       file-and-line evidence you can re-run yourself.
     </p>
-    <p id="meta" class="meta" hidden></p>
+    <p id="meta" class="meta"></p>
   </section>
 
-  <section aria-label="Catalog controls" class="controls">
-    <input type="search" id="search" placeholder="Search name, repo, verdict..." autocomplete="off">
-    <div class="filters">
-      <div class="filter-group" role="group" aria-label="Filter by grade" id="grade-filters"></div>
-      <div class="filter-group" role="group" aria-label="Filter by category" id="category-filters"></div>
+  <section class="controls" aria-label="Catalog filters">
+    <form class="wrap controls-inner" id="filter-form" novalidate>
+        <p class="search-field">
+          <label class="visually-hidden" for="search">Search plugins</label>
+          <input type="search" id="search" placeholder="Search name, repo, verdict..." autocomplete="off" spellcheck="false">
+        </p>
+        <div class="select-field">
+          <label for="grade-select">Grade</label>
+          <select id="grade-select"></select>
+        </div>
+        <div class="select-field">
+          <label for="category-select">Category</label>
+          <select id="category-select"></select>
+        </div>
+        <button type="button" class="chip chip-reset" id="clear-filters" hidden>Clear filters</button>
+      </form>
+  </section>
+
+  <section class="catalog-section" aria-labelledby="catalog-title" id="catalog">
+    <h2 id="catalog-title" class="visually-hidden">Plugin catalog</h2>
+    <p id="count" class="meta" role="status" aria-live="polite"></p>
+
+    <noscript>
+      <p>This catalog needs JavaScript to render from data.json. Read the same list as markdown in
+      <a href="https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/INDEX.md">docs/catalog/INDEX.md</a>.</p>
+    </noscript>
+
+    <table class="catalog" id="catalog-table">
+      <thead>
+        <tr>
+          <th scope="col">Grade</th>
+          <th scope="col">Plugin</th>
+          <th scope="col">Repo</th>
+          <th scope="col" class="col-num">Stars</th>
+          <th scope="col">Verified</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+
+    <div id="empty" class="state-box" hidden>
+      <h2>No plugins match these filters</h2>
+      <p>Try a shorter search, or remove a grade or category filter to widen the results.</p>
+      <button type="button" class="button" id="reset-empty">Clear all filters</button>
+    </div>
+
+    <div id="error" class="state-box" hidden>
+      <h2>Catalog data could not load</h2>
+      <p>The page is served but data.json did not load. Regenerate it with
+      <code>node site/build.mjs</code> from the repository root, then reload.</p>
     </div>
   </section>
 
-  <p id="count" class="meta" role="status"></p>
-
-  <table class="catalog" id="catalog-table">
-    <thead>
-      <tr><th scope="col">Grade</th><th scope="col">Plugin</th><th scope="col">Repo</th><th scope="col">Stars</th></tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-  <p id="empty" class="meta" hidden>No plugins match the current filters.</p>
-
-  <section class="notes">
-    <h2>About these grades</h2>
+  <section class="notes" aria-labelledby="legend-title">
+    <h2 id="legend-title">About these grades</h2>
     <dl class="grade-legend">
-      <dt>A</dt><dd>Verified-clean. No high or critical findings; recommended by default in /bridge:install.</dd>
-      <dt>B</dt><dd>Safe with documented behavior. Any egress is documented and user-visible.</dd>
-      <dt>C</dt><dd>Use with awareness. Real capabilities or gaps to know about first. Also the ceiling when the pipeline could not fully examine a plugin.</dd>
-      <dt>D</dt><dd>Risky. Undocumented egress, obfuscation signals, or a disputed high finding. Install only if you understand the named risk.</dd>
-      <dt>F</dt><dd>Do not install. Demonstrated hostility.</dd>
+      <dt><span class="badge g-a" aria-hidden="true">A</span><span class="visually-hidden">Grade A:</span></dt>
+      <dd>Verified-clean. No high or critical findings; recommended by default in /bridge:install.</dd>
+      <dt><span class="badge g-b" aria-hidden="true">B</span><span class="visually-hidden">Grade B:</span></dt>
+      <dd>Safe with documented behavior. Any egress is documented and user-visible.</dd>
+      <dt><span class="badge g-c" aria-hidden="true">C</span><span class="visually-hidden">Grade C:</span></dt>
+      <dd>Use with awareness. Real capabilities or gaps to know about first. Also the ceiling when the pipeline could not fully examine a plugin.</dd>
+      <dt><span class="badge g-d" aria-hidden="true">D</span><span class="visually-hidden">Grade D:</span></dt>
+      <dd>Risky. Undocumented egress, obfuscation signals, or a disputed high finding. Install only if you understand the named risk.</dd>
+      <dt><span class="badge g-f" aria-hidden="true">F</span><span class="visually-hidden">Grade F:</span></dt>
+      <dd>Do not install. Demonstrated hostility.</dd>
     </dl>
-    <p>
+    <p class="methodology">
       A grade is an evidence-backed opinion over one pinned commit as of its verified date. It is
       not a safety guarantee and says nothing about any other version. Full methodology lives in
       <a href="https://github.com/beartackler/dsh-bridge/blob/main/docs/trust/pipeline-architecture.md">docs/trust/pipeline-architecture.md</a>.

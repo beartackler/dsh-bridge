@@ -150,3 +150,41 @@ Best doc of the four. Every line-numbered citation checked (transport union, dup
 ## Verdict
 
 **Approve with revisions. No blockers.** Citation hygiene is unusually strong for AI-generated research: roughly 30 spot checks produced zero fabricated quotes and only one wrong identifier (File 1, finding 1). Three major findings must be fixed before these docs drive implementation: the `/permissionPresets` misnomer, the phantom `/new`//`/sessions` natives anchoring the MVP session cluster, and the `/model` ranking contradiction, because each would convert directly into wasted or broken work. The minors are wording and bookkeeping. Recommended order: fix File 2 first (it drives scope), then File 1, then deduplicate MCP prose toward the gap analysis.
+
+---
+
+## Fixes applied
+
+**Date:** 2026-08-26
+Every citation below was re-verified against `reference/deepseek-harness` before the corresponding edit: full re-enumeration of `commands.register` across `packages/` and `apps/` (six server-side names plus client-side `model`, unchanged from the review's enumeration), line reads of the cited sources, and existence checks for every package path touched.
+
+### docs/research/portable-features.md
+
+- Finding 1 (phantom `/new`, `/sessions`) had been fixed in the doc's Revision 1 pass before this maintenance window; rows 5 and 6 now state both commands absent, difficulty S to M, MVP session cluster reordered. Verified consistent with the re-enumeration; no further edit.
+- Finding 2 (`/model` ranking), applied: row 2 value lowered 5 to 3, MVP item 4 replaced with `/compact`; familiar-name aliasing moved to post-MVP. Partial rebuttal recorded below.
+- Finding 3 (invented preset names), applied: row 7 now lists exactly `workspace-write` and `danger-full-access`. One correction beyond the finding: `read-only` does exist as a sandbox mode (`sandbox-policy/src/index.ts`, fail-safe default) even though it is not a preset name, so the row distinguishes sandbox modes from approval policies (`user-approval/src/index.ts:97`: `'ask' | 'never'`) instead of dropping the vocabulary entirely.
+- Finding 4 (unverified native-surface citations), applied and upgraded: rows 16, 22, 23 annotated or corrected after actual enumeration, not just marked *(verify)*. No `/status` and no `/theme` command registration exists anywhere in the checkout; `token-meter`, `session-stats`, `ui-theme`, `runtime-diagnostics` packages all exist and their paths were kept. Row 29 additionally corrected beyond the flag: the todo checklist renderer is `ui-conversation`'s `TodoPanel.tsx`; `ui-plan` provides the plan-mode control.
+- Finding 5 (resolved question still open), applied: colon-namespacing question struck through and answered with citations (`commands/src/index.ts:28,117`), cross-referenced to the inventory doc.
+- Finding 6 (markdown-command difficulty), applied: row 12 raised M to L, rescoped to a converter/importer command, scan roots cited (`.dsh/skills`, `.agents/skills`, not `.claude/commands`, per `skill-filesystem/README.md:35-38`).
+- Reviewer's re-scoring suggestions partially adopted: bash passthrough (row 24) raised 3 to 5 as suggested. Row 8 kept at value 5; see rebuttal below.
+
+### docs/research/dsh-native-inventory.md
+
+- Finding 1 (`/permissionPresets` misnomer), applied: renamed to `/permission` in both places (§0 summary row 6 and §1.2 table), bare-invocation behavior described per source comments (`src/index.ts:276-277`). Grep confirms no remaining occurrence of the misnomer anywhere under `docs/research/`.
+- Findings 2 and 3 had been fixed in the doc's Revision 1 pass (verdict tally 15 SKIP / 6 WRAP / 4 IMPROVE; §12.4 rewritten around the pnpm >= 10 `allowBuilds` gate with observable install-flow symptoms). Spot-checked against `args.ts:171` and `publish.md:163-173`; both hold.
+- Finding 4 required no change per the review itself; the doc's existing single verified attribution stands.
+
+### docs/research/dsh-capability-seams.md
+
+- Findings 1 and 3 had been fixed in the doc's Revision 1 pass (MCP hot-add question marked resolved citing the gap analysis §7; §1 MCP row reduced to summary plus authoritative pointer). Verified present and accurate.
+- Finding 2 (promote the security consequence), applied: new subsection 1.1 carries the in-process-execution consequence as its own section, cross-referencing the install-time argument in `dsh-native-inventory.md` §12.4.
+
+### docs/research/mcp-gap-analysis.md
+
+- Finding 2 (G8 symptom), applied: Impact cell now names the observable failure (boot or Settings mount hanging up to ~60s per unreachable server), worded from the README known-limitations entry the review cited.
+- Finding 1 required no change per the review itself; noted in the doc's Revision 1 entry.
+
+### Rebuttals (no doc change made)
+
+1. **File 2, finding 2, second half:** the reviewer suggests permission-flag vocabulary (row 8, value 5) is plausibly lower-reflex than `/compact` (value 4). Kept at 5 deliberately: for the charter's refugee audience, approval-mode mapping is a first-ten-minutes trust decision (whether they can run YOLO at all), which is a different reflex class from `/compact`'s frequency-based value. Both stay in the MVP cut; revisit with usage evidence, not intuition.
+2. **File 2, finding 2, nuance inside the accepted fix:** the demotion accepts the inventory SKIP verdict as controlling, but the reviewer's own reasoning (aliasing effort is not zero) cuts toward post-MVP rather than never. The row records aliasing as deferred work with a reopen condition, not a dead feature.

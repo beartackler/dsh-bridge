@@ -1,217 +1,674 @@
-:root {
-  --bg: #fdfdfc;
-  --surface: #f4f4f2;
-  --border: #e2e2de;
-  --text: #1c1e21;
-  --text-soft: #5c6066;
-  --link: #0b666a;
+/* dsh-bridge catalog. Vanilla CSS. No external fonts, images, or requests. */
 
-  /* Grade colors chosen to stay distinguishable under deuteranopia and protanopia:
-     teal / blue / amber / orange / red, each paired with a text-on-color that passes contrast. */
-  --grade-a-bg: #d7eeec; --grade-a-fg: #00565c; --grade-a-line: #2aa198;
-  --grade-b-bg: #dbe7f7; --grade-b-fg: #1c5099; --grade-b-line: #3b82c4;
-  --grade-c-bg: #f7ecd2; --grade-c-fg: #7a5200; --grade-c-line: #c99a2e;
-  --grade-d-bg: #fbe4d1; --grade-d-fg: #8a4300; --grade-d-line: #d97a2e;
-  --grade-f-bg: #fadcdc; --grade-f-fg: #8f1d1d; --grade-f-line: #cc4444;
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: light dark;
+
+  /* Neutral surfaces with a faint cool tint toward the accent. */
+  --bg: oklch(0.984 0.004 250);
+  --bg-raised: oklch(0.957 0.005 250);
+  --surface: oklch(1 0 0);
+  --ink: oklch(0.24 0.02 255);
+  --ink-muted: oklch(0.45 0.02 255);
+  --ink-faint: oklch(0.54 0.018 255);
+  --border: oklch(0.905 0.01 255);
+  --border-strong: oklch(0.82 0.015 255);
+
+  /* Interactive accent. Deliberately shares the blue family with grade B:
+     one restrained accent carries links, focus rings, and pressed states. */
+  --accent: oklch(0.5 0.13 255);
+
+  /* Grade palette. Letters carry the meaning; color reinforces.
+     Chosen to stay distinguishable under common color-vision deficiencies:
+     A teal, B blue, C amber, D orange, F red. Light values tuned for >= 4.5:1
+     on their tinted badge backgrounds. */
+  --grade-a: oklch(0.52 0.085 195);
+  --grade-b: oklch(0.49 0.115 255);
+  --grade-c: oklch(0.52 0.105 80);
+  --grade-d: oklch(0.53 0.14 55);
+  --grade-f: oklch(0.51 0.185 27);
+
+  /* Spacing scale, 4px base. */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+  --s-8: 4rem;
+
+  --wrap: 68rem;
+  --radius: 8px;
+
+  /* z-index scale: the sticky filter bar is the only elevated surface. */
+  --z-sticky: 20;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --t-fast: 150ms;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16181a;
-    --surface: #1f2225;
-    --border: #33373b;
-    --text: #e6e8ea;
-    --text-soft: #9aa0a6;
-    --link: #6fc7cb;
+    /* Dark mode raises lightness and chroma rather than inverting. */
+    --bg: oklch(0.205 0.015 255);
+    --bg-raised: oklch(0.245 0.018 255);
+    --surface: oklch(0.25 0.018 255);
+    --ink: oklch(0.93 0.008 255);
+    --ink-muted: oklch(0.77 0.014 255);
+    --ink-faint: oklch(0.64 0.018 255);
+    --border: oklch(0.32 0.02 255);
+    --border-strong: oklch(0.42 0.025 255);
+    --accent: oklch(0.74 0.115 250);
 
-    --grade-a-bg: #10312f; --grade-a-fg: #7fd8d2; --grade-a-line: #2aa198;
-    --grade-b-bg: #14263e; --grade-b-fg: #8db8ef; --grade-b-line: #3b82c4;
-    --grade-c-bg: #33290f; --grade-c-fg: #e3bc63; --grade-c-line: #c99a2e;
-    --grade-d-bg: #34200e; --grade-d-fg: #eda45f; --grade-d-line: #d97a2e;
-    --grade-f-bg: #371414; --grade-f-fg: #ef9191; --grade-f-line: #cc4444;
+    --grade-a: oklch(0.79 0.095 195);
+    --grade-b: oklch(0.75 0.105 255);
+    --grade-c: oklch(0.81 0.125 88);
+    --grade-d: oklch(0.77 0.13 62);
+    --grade-f: oklch(0.72 0.155 25);
   }
 }
 
-* { box-sizing: border-box; }
+/* ------------------------------------------------------------ reset lite */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
 
 body {
-  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: var(--ink);
   background: var(--bg);
-  color: var(--text);
-  font-family: ui-serif, Georgia, "Times New Roman", serif;
-  font-size: 17px;
-  line-height: 1.55;
 }
+
+svg {
+  display: block;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+code,
+.mono {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--s-4);
+  top: calc(-1 * var(--s-4));
+  z-index: calc(var(--z-sticky) + 1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--s-2) var(--s-3);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  top: var(--s-4);
+}
+
+/* --------------------------------------------------------------- layout */
 
 .wrap {
-  max-width: 64rem;
+  max-width: var(--wrap);
   margin-inline: auto;
-  padding-inline: clamp(1rem, 4vw, 2.5rem);
+  padding-inline: var(--s-5);
 }
 
-a { color: var(--link); }
-code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.85em;
-  background: var(--surface);
-  border-radius: 4px;
-  padding: 0.1em 0.35em;
+@media (min-width: 40em) {
+  .wrap {
+    padding-inline: var(--s-6);
+  }
 }
+
+/* --------------------------------------------------------------- header */
 
 .site-header {
-  border-bottom: 1px solid var(--border);
-  padding-block: 1.25rem;
+  padding-top: var(--s-6);
 }
-.brand { margin: 0; font-size: 1.05rem; letter-spacing: 0.02em; }
-.brand a { color: inherit; text-decoration: none; }
-.tagline { margin: 0.15rem 0 0; color: var(--text-soft); font-size: 0.85rem; }
 
-.hero { padding-block: clamp(2.5rem, 7vw, 4.5rem) 1.5rem; max-width: 46rem; }
-.hero h1 {
-  font-size: clamp(1.6rem, 4.5vw, 2.4rem);
-  line-height: 1.2;
-  margin: 0 0 1rem;
-  font-weight: 600;
+.brand a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 750;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
 }
-.hero p { margin: 0 0 1rem; color: var(--text); }
-.meta { color: var(--text-soft); font-size: 0.85rem; }
+
+.brand a:hover {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.tagline {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+  margin-top: 2px;
+}
+
+/* ----------------------------------------------------------------- hero */
+
+.hero {
+  padding-block: var(--s-7) var(--s-6);
+}
+
+.hero h1 {
+  font-size: clamp(1.8125rem, 1.3rem + 2.2vw, 2.5rem);
+  font-weight: 750;
+  line-height: 1.12;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+  max-width: 24ch;
+}
+
+.hero .lede {
+  margin-top: var(--s-4);
+  max-width: 68ch;
+  color: var(--ink-muted);
+}
+
+.meta {
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.hero .meta {
+  margin-top: var(--s-4);
+}
+
+/* ------------------------------------------------------- controls (sticky) */
 
 .controls {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding-block: var(--s-3);
+}
+
+/* Stick the filter bar on viewports tall enough to afford it; on phones a
+   multi-row sticky header would eat the content the filters exist to serve. */
+@media (min-width: 48em) {
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+  }
+}
+
+.controls-inner {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
   align-items: center;
-  padding-block: 1rem;
-  position: sticky;
-  top: 0;
-  background: var(--bg);
-  z-index: 1;
-  border-bottom: 1px solid var(--border);
+  gap: var(--s-3) var(--s-4);
 }
-#search {
-  flex: 1 1 16rem;
-  max-width: 26rem;
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  font-size: 0.95rem;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-#search:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
 
-.filters { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; }
-.filter-group { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.search-field {
+  flex: 1 1 280px;
+  max-width: 400px;
+}
+
+.search-field input {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--s-2) var(--s-3);
+  transition: border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
+}
+
+.search-field input:hover {
+  border-color: var(--ink-faint);
+}
+
+.search-field input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
+}
+
+.search-field input::placeholder {
+  color: var(--ink-faint);
+  opacity: 1;
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.select-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.select-field label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.select-field select {
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--s-2) var(--s-3);
+  max-width: 100%;
+  transition: border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out);
+}
+
+.select-field select:hover {
+  border-color: var(--ink-faint);
+}
+
+.select-field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
+}
+
+/* Filter chips. Pressed state borrows the matching grade token so the
+   chip, the table badge, and the legend all read as one system. */
 
 .chip {
   appearance: none;
-  font: inherit;
-  font-size: 0.82rem;
-  padding: 0.22rem 0.7rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-soft);
   cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  transition: color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    background-color var(--t-fast) var(--ease-out);
 }
-.chip:hover { color: var(--text); }
-.chip[aria-pressed="true"] {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--bg);
+
+.chip:hover {
+  color: var(--ink);
+  background: var(--bg-raised);
+  border-color: var(--ink-faint);
 }
-.chip:focus-visible,
-.row-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 
-/* Grade chips keep their grade identity when active. */
-.chip-grade[data-grade="A"][aria-pressed="true"] { background: var(--grade-a-line); border-color: var(--grade-a-line); }
-.chip-grade[data-grade="B"][aria-pressed="true"] { background: var(--grade-b-line); border-color: var(--grade-b-line); }
-.chip-grade[data-grade="C"][aria-pressed="true"] { background: var(--grade-c-line); border-color: var(--grade-c-line); }
-.chip-grade[data-grade="D"][aria-pressed="true"] { background: var(--grade-d-line); border-color: var(--grade-d-line); }
-.chip-grade[data-grade="F"][aria-pressed="true"] { background: var(--grade-f-line); border-color: var(--grade-f-line); }
-.chip-grade[aria-pressed="true"] { color: #ffffff; }
+.chip-count {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
 
-.catalog {
+.chip[aria-pressed="true"],
+.chip[aria-pressed="true"]:hover {
+  /* Grade chips bind --g per grade below; category chips fall back to the accent. */
+  background: color-mix(in oklab, var(--g, var(--accent)) 13%, var(--bg));
+  border-color: color-mix(in oklab, var(--g, var(--accent)) 45%, transparent);
+  color: var(--g, var(--accent));
+}
+
+.chip[aria-pressed="true"] .chip-count {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.chip.g-a { --g: var(--grade-a); }
+.chip.g-b { --g: var(--grade-b); }
+.chip.g-c { --g: var(--grade-c); }
+.chip.g-d { --g: var(--grade-d); }
+.chip.g-f { --g: var(--grade-f); }
+
+/* ---------------------------------------------------------------- badges */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding-inline: 0.35rem;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklab, var(--g) 38%, transparent);
+  background: color-mix(in oklab, var(--g) 13%, var(--bg));
+  color: var(--g);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1;
+}
+
+.badge.g-a { --g: var(--grade-a); }
+.badge.g-b { --g: var(--grade-b); }
+.badge.g-c { --g: var(--grade-c); }
+.badge.g-d { --g: var(--grade-d); }
+.badge.g-f { --g: var(--grade-f); }
+
+/* ---------------------------------------------------------------- table */
+
+.catalog-section {
+  padding-block: var(--s-5) var(--s-7);
+}
+
+.catalog-section .meta {
+  margin-bottom: var(--s-4);
+}
+
+table.catalog {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1.25rem;
+  font-size: 0.9375rem;
 }
+
 .catalog th {
   text-align: left;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-soft);
+  font-size: 0.8125rem;
   font-weight: 600;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  color: var(--ink-muted);
+  padding: 0 var(--s-3) var(--s-2);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
 }
+
+.catalog th.col-num {
+  text-align: right;
+}
+
 .catalog td {
-  padding: 0.6rem 0.75rem;
+  padding: var(--s-4) var(--s-3);
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
-.catalog tbody tr:hover { background: var(--surface); }
 
-.grade-badge {
-  display: inline-block;
-  min-width: 1.7em;
-  text-align: center;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+.catalog tbody tr {
+  transition: background-color var(--t-fast) var(--ease-out);
+}
+
+.catalog tbody tr:hover {
+  background: var(--bg-raised);
+}
+
+.catalog tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.plugin-name a {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.plugin-name a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.plugin-desc {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+  max-width: 52ch;
+}
+
+.verdict {
+  max-width: 46ch;
+}
+
+.repo a {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.84375rem;
+  color: var(--ink-muted);
+}
+
+.repo a:hover {
+  color: var(--accent);
+}
+
+.col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.verified {
+  color: var(--ink-muted);
+  font-size: 0.84375rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Narrow viewports: keep the semantic table in the DOM and restyle rows as
+   stacked entries. Field labels come from each cell's data-label. */
+
+@media (max-width: 59.99em) {
+  .catalog thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  table.catalog,
+  .catalog tbody,
+  .catalog tr,
+  .catalog td {
+    display: block;
+  }
+
+  .catalog tr {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: var(--s-4);
+    margin-block-end: var(--s-3);
+  }
+
+  .catalog tr:hover {
+    background: transparent;
+  }
+
+  .catalog tr:last-child {
+    margin-block-end: 0;
+  }
+
+  .catalog td {
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .catalog td + td {
+    margin-top: var(--s-3);
+  }
+
+  .catalog td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink-muted);
+    margin-bottom: 2px;
+  }
+
+  .col-num {
+    text-align: left;
+  }
+}
+
+/* ---------------------------------------------------------- state boxes */
+
+.state-box {
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  padding: var(--s-6);
+  margin-block: var(--s-5);
+  max-width: 60ch;
+}
+
+.state-box h2 {
+  font-size: 1.125rem;
   font-weight: 700;
-  font-size: 0.9rem;
-  line-height: 1.6;
-  border-radius: 6px;
-  border: 1px solid;
+  letter-spacing: -0.01em;
 }
-.grade-A { background: var(--grade-a-bg); color: var(--grade-a-fg); border-color: var(--grade-a-line); }
-.grade-B { background: var(--grade-b-bg); color: var(--grade-b-fg); border-color: var(--grade-b-line); }
-.grade-C { background: var(--grade-c-bg); color: var(--grade-c-fg); border-color: var(--grade-c-line); }
-.grade-D { background: var(--grade-d-bg); color: var(--grade-d-fg); border-color: var(--grade-d-line); }
-.grade-F { background: var(--grade-f-bg); color: var(--grade-f-fg); border-color: var(--grade-f-line); }
 
-.plugin-name { font-weight: 600; }
-.cell-meta { display: block; margin-top: 0.2rem; }
-.stars { white-space: nowrap; font-variant-numeric: tabular-nums; }
-
-.verdict-row td {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.92rem;
-  color: var(--text);
+.state-box p {
+  margin-top: var(--s-2);
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
 }
-.row-toggle {
+
+.state-box .button {
+  margin-top: var(--s-4);
+}
+
+.button {
   appearance: none;
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: inherit;
   cursor: pointer;
-  text-align: left;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--s-2) var(--s-4);
+  transition: border-color var(--t-fast) var(--ease-out),
+    background-color var(--t-fast) var(--ease-out);
 }
-.row-toggle .marker { color: var(--text-soft); margin-right: 0.4rem; }
-.card-link { font-size: 0.85rem; }
 
-.notes { padding-block: 3rem 2rem; max-width: 46rem; }
-.notes h2 { font-size: 1.15rem; margin-bottom: 0.75rem; }
-.grade-legend { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.9rem; margin: 0 0 1rem; }
-.grade-legend dt { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-weight: 700; }
-.grade-legend dd { margin: 0; color: var(--text-soft); font-size: 0.92rem; }
-.notes p:last-child { color: var(--text-soft); font-size: 0.92rem; }
+.button:hover {
+  border-color: var(--ink-faint);
+  background: var(--bg-raised);
+}
+
+noscript p {
+  margin-block: var(--s-5);
+  color: var(--ink-muted);
+}
+
+/* ---------------------------------------------------------------- notes */
+
+.notes {
+  border-top: 1px solid var(--border);
+  padding-block: var(--s-6) var(--s-8);
+}
+
+.notes h2 {
+  font-size: 1.3125rem;
+  font-weight: 750;
+  letter-spacing: -0.014em;
+}
+
+.grade-legend {
+  margin-top: var(--s-5);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--s-4);
+  row-gap: var(--s-3);
+  align-items: start;
+}
+
+.grade-legend dd {
+  color: var(--ink-muted);
+  font-size: 0.9375rem;
+  max-width: 68ch;
+}
+
+.notes .methodology {
+  margin-top: var(--s-6);
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+  max-width: 68ch;
+}
+
+/* --------------------------------------------------------------- footer */
 
 .site-footer {
   border-top: 1px solid var(--border);
-  padding-block: 1.5rem 2.5rem;
-  color: var(--text-soft);
-  font-size: 0.85rem;
+  padding-block: var(--s-5) var(--s-6);
+  font-size: 0.875rem;
+  color: var(--ink-muted);
 }
-.site-footer p { margin: 0.2rem 0; }
 
-@media (max-width: 40rem) {
-  body { font-size: 16px; }
-  .catalog th:nth-child(3), .catalog td:nth-child(3),
-  .catalog th:nth-child(4), .catalog td:nth-child(4) { display: none; }
-  .controls { position: static; }
+.site-footer p + p {
+  margin-top: var(--s-1);
+}
+
+.site-footer code {
+  font-size: 0.8125rem;
+}
+
+/* --------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,30 +1,47 @@
 /**
  * `/bridge-browse` - paginated browsing of the committed plugin catalog.
  *
- * Phase-1 slice of docs/specs/commands/browse.md: list with pagination,
- * category filter, and case-insensitive `find`, joining trust grades from
- * docs/catalog/cards/*.md. Charter rules honored here:
- *  - Offline-first: the only inputs are two committed files under
- *    docs/catalog/; zero network calls (spec acceptance 1).
- *  - Grades render verbatim from the report cards; this module never
- *    derives, rounds, or softens a verdict (spec section 1).
- *  - Output stays ASCII, emoji-free (CHARTER.md non-negotiable 4).
+ * Slice of docs/specs/commands/browse.md: list and find modes, `--category`,
+ * `--lang` (en/zh/any), and `--min-grade A|B|C` filters, fzf-style fuzzy
+ * matching on find queries, grade-then-stars ranking over grades joined from
+ * docs/catalog/INDEX.md (report-card fallback when a card exists but INDEX
+ * lags), pagination in markdown, and an install handoff footer.
  *
- * The manifest is loaded lazily on first invocation and memoized per
- * (path, mtime); registration stays side-effect free.
+ * Charter rules honored here:
+ *  - Offline-first: inputs are committed files under docs/catalog/ only;
+ *    zero network calls at browse time (spec acceptance 1).
+ *  - Grades render verbatim from the audit surface; this module never
+ *    derives, rounds, or softens a verdict (spec section 1). D, F, and ?
+ *    can never be requested as floors.
+ *  - Output stays ASCII, emoji-free (CHARTER.md non-negotiable 4).
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { CommandResult } from "../lib/types.js";
 
-/** Fixed page size for this slice (browse spec section 3.1 default). */
+/** Default page size for list rendering (browse spec section 3.1). */
 export const PAGE_SIZE = 10;
 
 /** Longest description tail shown per row; clipped with ASCII dots. */
-const DESC_WIDTH = 80;
+const DESC_WIDTH = 72;
+
+/** Grade letters that may serve as a --min-grade floor (never D, F, or ?). */
+export const GRADE_FLOORS: readonly string[] = ["A", "B", "C"];
+
+/** Rank points per grade letter; higher sorts first. Unreviewed sorts last. */
+const GRADE_POINTS: Readonly<Record<string, number>> = Object.freeze({
+  A: 4,
+  B: 3,
+  C: 2,
+  D: 1,
+  F: 0,
+});
+
+/** Accepted --lang values mapped to their filter predicate. */
+const LANGS: readonly string[] = ["en", "zh", "any"];
 
 /** One manifest row, narrowed to the fields /browse renders. */
 export interface CatalogEntry {
@@ -33,7 +50,10 @@ export interface CatalogEntry {
   readonly category: string;
   /** Repo star count at snapshot time; null when upstream has not polled it. */
   readonly stars: number | null;
+  /** English description; empty string when upstream has none yet. */
   readonly description: string;
+  /** Chinese description; empty string when upstream has none yet. */
+  readonly descriptionZh: string;
 }
 
 /** Options letting tests pin explicit catalog locations (no global state). */
@@ -57,18 +77,24 @@ export class BrowseError extends Error {}
 export function resolveCatalogPaths(startDir: string = dirname(fileURLToPath(import.meta.url))): {
   manifestPath: string;
   cardsDir: string;
-} | undefined {
+  indexMdPath?: string;
+} {
   let dir = startDir;
   for (let hops = 0; hops < 8; hops += 1) {
     const catalog = join(dir, "docs", "catalog");
     if (existsSync(join(catalog, "manifest.json"))) {
-      return { manifestPath: join(catalog, "manifest.json"), cardsDir: join(catalog, "cards") };
+      const indexMdPath = join(catalog, "INDEX.md");
+      return {
+        manifestPath: join(catalog, "manifest.json"),
+        cardsDir: join(catalog, "cards"),
+        ...(existsSync(indexMdPath) ? { indexMdPath } : {}),
+      };
     }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return undefined;
+  return undefined as unknown as undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +111,7 @@ function toEntry(raw: unknown): CatalogEntry | undefined {
     category: typeof record["category"] === "string" ? record["category"] : "",
     stars: typeof record["stars_if_known"] === "number" ? record["stars_if_known"] : null,
     description: typeof record["description_en"] === "string" ? record["description_en"] : "",
+    descriptionZh: typeof record["description_zh"] === "string" ? record["description_zh"] : "",
   };
 }
 
@@ -106,8 +133,8 @@ export function loadManifest(manifestPath: string): CatalogEntry[] {
     throw new BrowseError(`catalog manifest must be a JSON array: ${manifestPath}`);
   }
   const entries: CatalogEntry[] = [];
-  for (const raw of parsed) {
-    const entry = toEntry(raw);
+  for (const row of parsed) {
+    const entry = toEntry(row);
     if (entry) entries.push(entry);
   }
   return entries;
@@ -141,272 +168,35 @@ export function loadManifestCached(manifestPath: string): CatalogEntry[] {
 }
 
 // ---------------------------------------------------------------------------
-// Grade join (report cards -> manifest entries)
+// Grade join (INDEX.md table first, committed report cards as fallback)
 // ---------------------------------------------------------------------------
 
-/**
- * Base slug of a manifest repo: lowercase, `.git` stripped, cut at the first
- * `#subpath` (e.g. `tt-a1i/archify#integrations/deepseek-harness` becomes
- * `tt-a1i/archify`). Subpath entries share their parent repo's audit.
- */
-export function repoBase(repo: string): string {
-  const clean = repo.toLowerCase().replace(/\.git$/, "");
-  const head = clean.split("#")[0] ?? clean;
-  const segments = head.split("/").filter((part) => part !== "");
-  return segments.length >= 2 ? `${segments[0]}/${segments[1]}` : head;
+/** Trim a markdown cell and strip surrounding backticks. */
+function cleanCell(cell: string): string {
+  return cell.trim().replace(/^`+|`+$/g, "").trim();
 }
 
 /**
- * Extract a card's grade letter. Handles the two shapes in docs/catalog/cards:
- *   1. bold header-table cell: `| **Grade** | **B** (adjudicated...) |`
- *   2. heading form:           `### Overall: C`
- * Unbolded cells are deliberately rejected so revision-table headers like
- * `| Grade | Change |` can never yield a phantom letter.
+ * Parse the `## Catalog` grade table out of docs/catalog/INDEX.md.
+ * Columns: | Grade | Plugin | Repo | Stars | Verdict | Verified | Card |
+ * The repo column is authoritative; the display-name column is kept only as
+ * a fallback join key for entries whose manifest name differs from the repo.
+ * Returns maps of key -> grade letter for both keyspaces.
  */
-export function extractGrade(cardText: string): string | null {
-  const boldCell = /\|\s*\*{0,2}grade\s*\*{0,2}\s*\|\s*\*{1,2}([A-F?])\*{1,2}/i.exec(cardText);
-  if (boldCell) return boldCell[1]?.toUpperCase() ?? null;
-  const colonForm = /\b(?:overall|grade)\s*:\s*\*{0,2}([A-F?])\b/i.exec(cardText);
-  return colonForm ? (colonForm[1]?.toUpperCase() ?? null) : null;
-}
-
-function cardRepoCandidates(cardText: string): Set<string> {
-  const candidates = new Set<string>();
-  const link = /github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = link.exec(cardText)) !== null) {
-    const owner = match[1];
-    const repo = match[2];
-    if (owner && repo) candidates.add(repoBase(`${owner}/${repo}`));
+export function parseIndexGrades(indexMarkdown: string): { byRepo: Map<string, string>; byName: Map<string, string> } {
+  const byRepo = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const line of indexMarkdown.split(/\r?\n/)) {
+    const row = /^\|\s*([A-F?])\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|/.exec(line);
+    if (!row || row[2] === undefined || row[3] === undefined) continue;
+    if (/^[-:\s]*$/.test(row[1] ?? "")) continue; // markdown rule row
+    const grade = row[1];
+    const displayName = cleanCell(row[2]);
+    const repoCell = cleanCell(row[3]);
+    if (grade === undefined) continue;
+    const base = repoBase(repoCell);
+    if (base !== "") byRepo.set(base, grade);
+    if (displayName !== "" && !displayName.includes("http")) byName.set(displayName.toLowerCase(), grade);
   }
-  return candidates;
-}
-
-/**
- * Join card grades onto manifest repo bases. A card contributes its grade
- * only when exactly one of its GitHub links resolves to a known manifest
- * base; ambiguous or unrelated links are ignored rather than guessed.
- * Returns a map of repo base -> grade letter.
- */
-export function loadCardGrades(cardsDir: string, knownBases: ReadonlySet<string>): Map<string, string> {
-  const grades = new Map<string, string>();
-  let files: string[];
-  try {
-    files = readdirSync(cardsDir).filter((file) => file.endsWith(".md")).sort();
-  } catch {
-    return grades; // No cards dir: every entry renders as unreviewed.
-  }
-  for (const file of files) {
-    const text = readFileSync(join(cardsDir, file), "utf8");
-    const grade = extractGrade(text);
-    if (!grade) continue;
-    const hits = [...cardRepoCandidates(text)].filter((base) => knownBases.has(base));
-    if (hits.length !== 1) continue;
-    const base = hits[0];
-    if (base) grades.set(base, grade);
-  }
-  return grades;
-}
-
-// ---------------------------------------------------------------------------
-// Filtering, sorting, pagination (pure functions)
-// ---------------------------------------------------------------------------
-
-export interface BrowseFilter {
-  readonly category?: string;
-  /** Case-insensitive substring across name + description. */
-  readonly query?: string;
-}
-
-/** Deterministic order: stars desc (unknown last), then name asc. */
-export function sortEntries(entries: readonly CatalogEntry[]): CatalogEntry[] {
-  return [...entries].sort((a, b) => {
-    const starsA = a.stars ?? -1;
-    const starsB = b.stars ?? -1;
-    if (starsA !== starsB) return starsB - starsA;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-export function filterEntries(entries: readonly CatalogEntry[], filter: BrowseFilter): CatalogEntry[] {
-  let result: readonly CatalogEntry[] = entries;
-  if (filter.category !== undefined) {
-    result = result.filter((entry) => entry.category === filter.category);
-  }
-  if (filter.query !== undefined && filter.query !== "") {
-    const needle = filter.query.toLowerCase();
-    result = result.filter(
-      (entry) => entry.name.toLowerCase().includes(needle) || entry.description.toLowerCase().includes(needle),
-    );
-  }
-  return sortEntries(result);
-}
-
-/** Total pages for a result count; always at least one so footers stay sane. */
-export function pageCount(total: number, size: number = PAGE_SIZE): number {
-  return Math.max(1, Math.ceil(total / size));
-}
-
-export function pageSlice<T>(items: readonly T[], page: number, size: number = PAGE_SIZE): T[] {
-  const start = (page - 1) * size;
-  return items.slice(start, start + size);
-}
-
-// ---------------------------------------------------------------------------
-// Rendering + the command runner
-// ---------------------------------------------------------------------------
-
-function clip(text: string, width: number = DESC_WIDTH): string {
-  return text.length <= width ? text : `${text.slice(0, width - 3)}...`;
-}
-
-function starsCell(stars: number | null): string {
-  return stars === null ? "-" : String(stars);
-}
-
-function usageMarkdown(): string {
-  return [
-    "### /bridge-browse",
-    "",
-    "Usage:",
-    "- `/bridge-browse [category] [next | prev | <page>]`",
-    "- `/bridge-browse find <query>`",
-    "",
-  ].join("\n");
-}
-
-function notFoundMarkdown(detail: string): string {
-  return ["### /bridge-browse", "", "Catalog is unavailable.", "", detail, "", "Rebuild docs/catalog, then retry.", ""].join("\n");
-}
-
-/** Per-context pagination memory for `next` / `prev`. WeakMap: no leaks. */
-const lastListPage = new WeakMap<object, number>();
-
-function parsePageToken(token: string, currentPage: number, pages: number): { page: number } | { error: string } {
-  const lowered = token.toLowerCase();
-  if (lowered === "next") return { page: Math.min(pages, currentPage + 1) };
-  if (lowered === "prev") return { page: Math.max(1, currentPage - 1) };
-  const requested = Number(token);
-  if (!Number.isInteger(requested) || requested < 1 || requested > pages) {
-    return { error: `page must be 1-${pages}; got "${token}"` };
-  }
-  return { page: requested };
-}
-
-/**
- * `/bridge-browse` runner. Pure over (ctx, args, options): all filesystem
- * access goes through the explicit or auto-resolved catalog paths.
- */
-export async function runBrowse(
-  ctx: BridgeContextLike,
-  args: Readonly<Record<string, string>>,
-  options: BrowseOptions = {},
-): Promise<CommandResult> {
-  void ctx;
-
-  const positions = resolveCatalogPaths();
-  const manifestPath = options.manifestPath ?? positions?.manifestPath;
-  const cardsDir = options.cardsDir ?? positions?.cardsDir;
-  if (manifestPath === undefined) {
-    return { markdown: notFoundMarkdown("docs/catalog/manifest.json was not found in this checkout.") };
-  }
-
-  let entries: CatalogEntry[];
-  try {
-    entries = loadManifestCached(manifestPath);
-  } catch (error) {
-    return { markdown: notFoundMarkdown((error as Error).message) };
-  }
-
-  const tokens = (args["_"] ?? "").split(/\s+/).filter((token) => token !== "");
-  const categories = [...new Set(entries.map((entry) => entry.category))].sort();
-
-  let filter: BrowseFilter = {};
-  let mode: "list" | "find" = "list";
-  let pageToken: string | undefined;
-
-  if (tokens[0]?.toLowerCase() === "find") {
-    const query = tokens.slice(1).join(" ").trim();
-    if (query === "") return { markdown: usageMarkdown() };
-    mode = "find";
-    filter = { query };
-  } else if (tokens.length > 0) {
-    const navOnly = (token: string): boolean => /^(?:next|prev|[1-9][0-9]*)$/i.test(token);
-    const first = tokens[0];
-    if (first !== undefined && navOnly(first) && tokens.length === 1) {
-      pageToken = first;
-    } else {
-      const category = first ?? "";
-      if (!categories.includes(category)) {
-        return {
-          markdown: [`### /bridge-browse`, "", `Unknown category "${category}".`, "", `Valid: ${categories.join(", ")}`, ""].join("\n"),
-        };
-      }
-      filter = { category };
-      const second = tokens[1];
-      if (second !== undefined) {
-        if (tokens.length > 2 || !navOnly(second)) return { markdown: usageMarkdown() };
-        pageToken = second;
-      }
-    }
-  }
-
-  const results = filterEntries(entries, filter);
-  const pages = pageCount(results.length);
-  const remembered = lastListPage.get(ctx) ?? 1;
-
-  let page = 1;
-  if (pageToken !== undefined) {
-    const resolved = parsePageToken(pageToken, remembered, pages);
-    if ("error" in resolved) {
-      return { markdown: [`### /bridge-browse`, "", resolved.error, ""].join("\n") };
-    }
-    page = resolved.page;
-  }
-
-  const shown = pageSlice(results, page);
-  const grades =
-    cardsDir === undefined ? new Map<string, string>() : loadCardGrades(cardsDir, new Set(entries.map((entry) => repoBase(entry.repo))));
-
-  const rows = shown.map((entry) => [
-    grades.get(repoBase(entry.repo)) ?? "?",
-    entry.name,
-    entry.category,
-    starsCell(entry.stars),
-    clip(entry.description),
-  ]);
-
-  const scope =
-    mode === "find"
-      ? `find "${filter.query}" - ${results.length} match${results.length === 1 ? "" : "es"}`
-      : filter.category !== undefined
-        ? `category=${filter.category} - ${results.length} entr${results.length === 1 ? "y" : "ies"}`
-        : `${entries.length} entries`;
-
-  const sections = [
-    "### /bridge-browse",
-    "",
-    `${scope} | page ${page}/${pages}`,
-    "",
-  ];
-  const table = ctx.output.table(["GRADE", "PLUGIN", "CATEGORY", "STARS", "DESCRIPTION"], rows);
-  if (table !== "") {
-    sections.push(table);
-  } else {
-    sections.push("No entries match. Nothing is padded in to fill the page.", "");
-  }
-  sections.push(`paging: /bridge-browse${filter.category !== undefined ? ` ${filter.category}` : ""} next | prev | <page> | search: /bridge-browse find <query>`, "");
-
-  // Only list mode moves the remembered page; `find` results never disturb it.
-  if (mode === "list") lastListPage.set(ctx, page);
-
-  return {
-    markdown: sections.join("\n"),
-    data: { mode, filter, total: results.length, page, pages, entries: shown },
-  };
-}
-
-/** BridgeContext structural minimum used above (avoids importing lib/context). */
-interface BridgeContextLike {
-  readonly output: { table(headers: readonly string[], rows: readonly (readonly string[])[]): string };
+  return { byRepo, byName };
 }

@@ -13,7 +13,7 @@
 | Native capability | Package family | Familiar-harness need covered | Verdict |
 |---|---|---|---|
 | Slash-command registry | `packages/interaction/commands` | `/`-command plane, dispatch, lifecycle logging | **WRAP** (register aliases; do not rebuild) |
-| Shipped commands (`/plan`, `/compact`, `/goal`, `/export`, `/feedback`, `/permissionPresets`) | see §1.2 | `/compact`, plan mode, transcript export | **WRAP** (alias + fill gaps) |
+| Shipped commands (`/plan`, `/compact`, `/goal`, `/export`, `/feedback`, `/permission`) | see §1.2 | `/compact`, plan mode, transcript export | **WRAP** (alias + fill gaps) |
 | `/model` selection | `packages/client/ui-model-selection` | `/model` | **SKIP** |
 | Skills (`SKILL.md`, `.agents/skills`, `.dsh/skills`) | `packages/skill/*` | Claude Code skills, Jcode skills | **SKIP** (author skills, don't build a system) |
 | Plan mode + `exit_plan_mode` | `packages/plan/plan-mode` | Plan mode / shift-tab planning | **SKIP** |
@@ -70,7 +70,7 @@ Grepped from `ctx.commands` registrations across `packages/`:
 | `/goal` | `packages/goal/command-goal/src/index.ts:191` | durable objective control |
 | `/export` | `packages/session-query/session-log-export/src/index.ts:20` | `/export` transcript |
 | `/feedback` | `packages/feedback/command-feedback/src/index.ts:102` | `/feedback` |
-| `/permissionPresets` | `packages/interaction/permission-presets/src/index.ts:275` | approval-mode switch. "bare invocation reports the current preset and the table; a preset argument switches through `set`". |
+| `/permission` | `packages/interaction/permission-presets/src/index.ts:275` | approval-mode switch. Bare invocation reports the current preset and the available names; a preset argument switches through `set`. (Corrected in Revision 1b: previously misnamed `/permissionPresets`; the cited line registers `name: 'permission'`.) |
 | `/model` | `packages/client/ui-model-selection` (client-side popupSelect via `ctx.commandUi`) | `/model`, with a two-level Model/Effort menu |
 
 **Gaps versus the CHARTER's list** (`/help`, `/model`, `/login`, `/init`, `/review`, `/compact`, `/resume`, `/memory`, `/mcp`):
@@ -425,3 +425,4 @@ Ordered by (value × uniqueness) ÷ effort, given everything above:
 
 - Corrected the §0 verdict tally from "14 SKIP, 7 WRAP" to "15 SKIP, 6 WRAP" to match the table's own verdict column (reviewer finding 2).
 - Reworded §12.4 so install-time lifecycle-script execution is described as gated by pnpm >= 10 `allowBuilds` instead of unconditional, verified against `apps/cli/src/args.ts:171` and `docs/user/develop/basic/publish.md` in the reference checkout (reviewer finding 3 and the cross-document tension with `dsh-capability-seams.md` §2). Added observable install-flow symptoms (pre-allowlist failure, post-allowlist execution, prebuilt path) so acceptance tests can assert them; this file has no Impact-column tables, so the symptom text lives in §12.4 directly. The conclusion (audit before install; the allowance is the trust boundary) is unchanged.
+- Revision 1b (2026-08-26): corrected the shipped-command name from `/permissionPresets` to `/permission` in §0 and §1.2 (reviewer finding 1). Re-verified against the reference checkout: `packages/interaction/permission-presets/src/index.ts:275` registers `name: 'permission'`, and bare invocation reports the current preset plus available names (handler branch at `:277`). No other occurrence of the misnomer remains in this document.

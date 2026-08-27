@@ -26,6 +26,7 @@ const PATCH_PATH = "/fake/.dsh/profiles/web/cordis.patch.yml";
 function makeContext() {
     return {
         profile: "web",
+        profileSource: "mount",
         paths: {
             home: "/fake",
             dshHome: "/fake/.dsh",

@@ -31,7 +31,7 @@ import {
   opencodeAuthPath,
   probeJsonSource,
 } from "../lib/paths.js";
-import type { BridgeContext, CommandResult } from "../lib/types.js";
+import type { BridgeContext, CommandResult, ProfileSource } from "../lib/types.js";
 
 /** Doctor health vocabulary (doctor spec severity mapping, rendered as text). */
 export type DoctorStatus = "green" | "yellow" | "red";
@@ -51,6 +51,14 @@ export interface DoctorCheck {
 /** Inputs collected once at the call boundary so checks stay pure over args. */
 export interface DoctorInputs {
   readonly profile: string;
+  /**
+   * Provenance of `profile` (F5). `mount` and `config` are names the user or
+   * the harness actually chose, so the profile checks may grade against them.
+   * `fallback` is a placeholder nobody invoked: grading against it produced the
+   * two spurious YELLOW rows in journey report 3.2, so those checks report the
+   * profiles they can see and stay green instead.
+   */
+  readonly profileSource?: ProfileSource;
   readonly home: string;
   readonly dshHome: string;
   readonly profilePatch: string;
@@ -63,11 +71,15 @@ export const MIN_NODE_MAJOR = 20;
 
 /** Run every doctor check. Order is the render order; ids are stable. */
 export function collectDoctorChecks(inputs: DoctorInputs): readonly DoctorCheck[] {
+  // A fallback name was never chosen by anyone, so it is not a claim the
+  // profile checks may grade (F5). Those two checks then describe what exists
+  // rather than faulting the user for a profile they never named.
+  const graded = (inputs.profileSource ?? "config") !== "fallback";
   return [
     checkNodeVersion(inputs.nodeVersion),
     checkCredentialFiles(inputs.home),
-    checkProfileDirs(inputs.dshHome, inputs.profile),
-    checkProfileConfig(inputs.profilePatch),
+    checkProfileDirs(inputs.dshHome, graded ? inputs.profile : undefined),
+    checkProfileConfig(inputs.profilePatch, graded),
   ];
 }
 
@@ -150,7 +162,16 @@ function checkCredentialFiles(home: string): DoctorCheck {
   };
 }
 
-function checkProfileDirs(dshHome: string, profile: string): DoctorCheck {
+/**
+ * Report the profile directories present, and whether the active profile is
+ * among them.
+ *
+ * `profile` is `undefined` when the name in hand is a fallback the user never
+ * invoked (F5). The check then verifies only what it can honestly verify: that
+ * profiles exist at all. Faulting the absence of `profiles/default` on an
+ * install that runs in `web` is the defect this parameter removes.
+ */
+function checkProfileDirs(dshHome: string, profile: string | undefined): DoctorCheck {
   const profilesDir = join(dshHome, "profiles");
   let names: string[] = [];
   try {
@@ -171,6 +192,14 @@ function checkProfileDirs(dshHome: string, profile: string): DoctorCheck {
       hint: "Create one: dsh plugin --profile <name> add github:<owner>/<repo>",
     };
   }
+  if (profile === undefined) {
+    return {
+      id: "profiles",
+      label: "DSH profiles",
+      status: "green",
+      detail: `${names.length} found: ${names.join(", ")} (active profile not reported by the host)`,
+    };
+  }
   if (names.includes(profile)) {
     return {
       id: "profiles",
@@ -188,13 +217,28 @@ function checkProfileDirs(dshHome: string, profile: string): DoctorCheck {
   };
 }
 
-function checkProfileConfig(profilePatch: string): DoctorCheck {
+/**
+ * Report whether the active profile's patch layer exists.
+ *
+ * `graded` is false when the path was built from a fallback profile name: the
+ * file's absence then says nothing about the user's install, so the row states
+ * that plainly instead of degrading the report (F5).
+ */
+function checkProfileConfig(profilePatch: string, graded = true): DoctorCheck {
   if (existsSync(profilePatch)) {
     return {
       id: "routes",
       label: "Profile config",
       status: "green",
       detail: `found ${profilePatch}`,
+    };
+  }
+  if (!graded) {
+    return {
+      id: "routes",
+      label: "Profile config",
+      status: "green",
+      detail: "not checked: the host did not report which profile is active; harness defaults apply",
     };
   }
   return {
@@ -238,13 +282,29 @@ function statusBadge(status: DoctorStatus): string {
   }
 }
 
-export function renderDoctorReport(checks: readonly DoctorCheck[], profile: string): string {
+/**
+ * Render the report. The profile line names its own provenance, so a reader can
+ * tell "the harness told us we are in `web`" from "nobody told us, this is a
+ * placeholder" without reading the source (F5).
+ */
+export function renderDoctorReport(
+  checks: readonly DoctorCheck[],
+  profile: string,
+  profileSource: ProfileSource = "config",
+): string {
   const summary = summarizeDoctorChecks(checks);
   const rows = checks.map((check) => [statusBadge(check.status), check.label, check.detail]);
 
+  const profileLine =
+    profileSource === "mount"
+      ? `Active profile: ${profile} (mounted)`
+      : profileSource === "config"
+        ? `Active profile: ${profile} (configured)`
+        : "Active profile: not reported by the host; profile checks report what exists";
+
   const parts: string[] = [
     heading("/bridge-doctor"),
-    `Active profile: ${profile}`,
+    profileLine,
     "",
     table(["STATUS", "CHECK", "DETAIL"], rows),
   ];
@@ -279,14 +339,20 @@ export async function runDoctor(
 ): Promise<CommandResult> {
   const checks = collectDoctorChecks({
     profile: ctx.profile,
+    profileSource: ctx.profileSource,
     home: ctx.paths.home,
     dshHome: ctx.paths.dshHome,
     profilePatch: ctx.paths.profilePatch,
     nodeVersion: process.version,
   });
   return {
-    markdown: renderDoctorReport(checks, ctx.profile),
+    markdown: renderDoctorReport(checks, ctx.profile, ctx.profileSource),
     // Transcript-visible by contract (types.ts): metadata and paths only.
-    data: { checks: [...checks], ...summarizeDoctorChecks(checks) },
+    data: {
+      checks: [...checks],
+      profile: ctx.profile,
+      profileSource: ctx.profileSource,
+      ...summarizeDoctorChecks(checks),
+    },
   };
 }

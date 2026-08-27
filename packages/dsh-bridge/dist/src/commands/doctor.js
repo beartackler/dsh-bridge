@@ -27,11 +27,15 @@ import { claudeCredentialsPath, codexAuthPath, geminiOauthCredsPath, opencodeAut
 export const MIN_NODE_MAJOR = 20;
 /** Run every doctor check. Order is the render order; ids are stable. */
 export function collectDoctorChecks(inputs) {
+    // A fallback name was never chosen by anyone, so it is not a claim the
+    // profile checks may grade (F5). Those two checks then describe what exists
+    // rather than faulting the user for a profile they never named.
+    const graded = (inputs.profileSource ?? "config") !== "fallback";
     return [
         checkNodeVersion(inputs.nodeVersion),
         checkCredentialFiles(inputs.home),
-        checkProfileDirs(inputs.dshHome, inputs.profile),
-        checkProfileConfig(inputs.profilePatch),
+        checkProfileDirs(inputs.dshHome, graded ? inputs.profile : undefined),
+        checkProfileConfig(inputs.profilePatch, graded),
     ];
 }
 // ---------------------------------------------------------------------------
@@ -109,6 +113,15 @@ function checkCredentialFiles(home) {
         hint: "Set a provider API key env var, or run /bridge-connect to import OAuth tokens",
     };
 }
+/**
+ * Report the profile directories present, and whether the active profile is
+ * among them.
+ *
+ * `profile` is `undefined` when the name in hand is a fallback the user never
+ * invoked (F5). The check then verifies only what it can honestly verify: that
+ * profiles exist at all. Faulting the absence of `profiles/default` on an
+ * install that runs in `web` is the defect this parameter removes.
+ */
 function checkProfileDirs(dshHome, profile) {
     const profilesDir = join(dshHome, "profiles");
     let names = [];
@@ -130,6 +143,14 @@ function checkProfileDirs(dshHome, profile) {
             hint: "Create one: dsh plugin --profile <name> add github:<owner>/<repo>",
         };
     }
+    if (profile === undefined) {
+        return {
+            id: "profiles",
+            label: "DSH profiles",
+            status: "green",
+            detail: `${names.length} found: ${names.join(", ")} (active profile not reported by the host)`,
+        };
+    }
     if (names.includes(profile)) {
         return {
             id: "profiles",
@@ -146,13 +167,28 @@ function checkProfileDirs(dshHome, profile) {
         hint: `Recreate it: dsh plugin --profile ${profile} add github:<owner>/<repo>`,
     };
 }
-function checkProfileConfig(profilePatch) {
+/**
+ * Report whether the active profile's patch layer exists.
+ *
+ * `graded` is false when the path was built from a fallback profile name: the
+ * file's absence then says nothing about the user's install, so the row states
+ * that plainly instead of degrading the report (F5).
+ */
+function checkProfileConfig(profilePatch, graded = true) {
     if (existsSync(profilePatch)) {
         return {
             id: "routes",
             label: "Profile config",
             status: "green",
             detail: `found ${profilePatch}`,
+        };
+    }
+    if (!graded) {
+        return {
+            id: "routes",
+            label: "Profile config",
+            status: "green",
+            detail: "not checked: the host did not report which profile is active; harness defaults apply",
         };
     }
     return {
@@ -181,12 +217,22 @@ function statusBadge(status) {
             return "[ RED    ]";
     }
 }
-export function renderDoctorReport(checks, profile) {
+/**
+ * Render the report. The profile line names its own provenance, so a reader can
+ * tell "the harness told us we are in `web`" from "nobody told us, this is a
+ * placeholder" without reading the source (F5).
+ */
+export function renderDoctorReport(checks, profile, profileSource = "config") {
     const summary = summarizeDoctorChecks(checks);
     const rows = checks.map((check) => [statusBadge(check.status), check.label, check.detail]);
+    const profileLine = profileSource === "mount"
+        ? `Active profile: ${profile} (mounted)`
+        : profileSource === "config"
+            ? `Active profile: ${profile} (configured)`
+            : "Active profile: not reported by the host; profile checks report what exists";
     const parts = [
         heading("/bridge-doctor"),
-        `Active profile: ${profile}`,
+        profileLine,
         "",
         table(["STATUS", "CHECK", "DETAIL"], rows),
     ];
@@ -216,15 +262,21 @@ export function renderDoctorReport(checks, profile) {
 export async function runDoctor(ctx, _args) {
     const checks = collectDoctorChecks({
         profile: ctx.profile,
+        profileSource: ctx.profileSource,
         home: ctx.paths.home,
         dshHome: ctx.paths.dshHome,
         profilePatch: ctx.paths.profilePatch,
         nodeVersion: process.version,
     });
     return {
-        markdown: renderDoctorReport(checks, ctx.profile),
+        markdown: renderDoctorReport(checks, ctx.profile, ctx.profileSource),
         // Transcript-visible by contract (types.ts): metadata and paths only.
-        data: { checks: [...checks], ...summarizeDoctorChecks(checks) },
+        data: {
+            checks: [...checks],
+            profile: ctx.profile,
+            profileSource: ctx.profileSource,
+            ...summarizeDoctorChecks(checks),
+        },
     };
 }
 //# sourceMappingURL=doctor.js.map

@@ -155,16 +155,16 @@ export function readTokenUsage(ctx, agent) {
         return undefined;
     const pressure = values["contextPressure"];
     const contextWindow = asFiniteNumber(pressure?.["contextWindow"]);
+    const pressureTokens = asFiniteNumber(pressure?.["pressureTokens"]);
+    const cacheReadTokens = asFiniteNumber(usage["cacheReadTokens"]);
+    const cacheWriteTokens = asFiniteNumber(usage["cacheWriteTokens"]);
     return {
         uncachedInputTokens,
         outputTokens,
-        ...(asFiniteNumber(usage["cacheReadTokens"]) === undefined
-            ? {}
-            : { cacheReadTokens: asFiniteNumber(usage["cacheReadTokens"]) }),
-        ...(asFiniteNumber(usage["cacheWriteTokens"]) === undefined
-            ? {}
-            : { cacheWriteTokens: asFiniteNumber(usage["cacheWriteTokens"]) }),
+        ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+        ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
         ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(pressureTokens === undefined ? {} : { pressureTokens }),
     };
 }
 /**

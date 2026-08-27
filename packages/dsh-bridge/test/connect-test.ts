@@ -58,6 +58,7 @@ function makeContext(home: string): BridgeContext {
   const dshHome = join(home, ".dsh");
   return {
     profile: "web",
+    profileSource: "mount",
     paths: {
       home,
       dshHome,

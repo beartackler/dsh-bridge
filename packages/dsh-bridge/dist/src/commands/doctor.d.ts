@@ -19,7 +19,7 @@
  * Rendering uses the shared lib/output helpers; the status badges are plain
  * fixed-width ASCII text, mirroring badge() (color is never load-bearing).
  */
-import type { BridgeContext, CommandResult } from "../lib/types.js";
+import type { BridgeContext, CommandResult, ProfileSource } from "../lib/types.js";
 /** Doctor health vocabulary (doctor spec severity mapping, rendered as text). */
 export type DoctorStatus = "green" | "yellow" | "red";
 /** One executed check: evidence-backed, hint-carrying when not green. */
@@ -36,6 +36,14 @@ export interface DoctorCheck {
 /** Inputs collected once at the call boundary so checks stay pure over args. */
 export interface DoctorInputs {
     readonly profile: string;
+    /**
+     * Provenance of `profile` (F5). `mount` and `config` are names the user or
+     * the harness actually chose, so the profile checks may grade against them.
+     * `fallback` is a placeholder nobody invoked: grading against it produced the
+     * two spurious YELLOW rows in journey report 3.2, so those checks report the
+     * profiles they can see and stay green instead.
+     */
+    readonly profileSource?: ProfileSource;
     readonly home: string;
     readonly dshHome: string;
     readonly profilePatch: string;
@@ -54,7 +62,12 @@ export interface DoctorSummary {
     readonly overall: "healthy" | "degraded" | "blocked";
 }
 export declare function summarizeDoctorChecks(checks: readonly DoctorCheck[]): DoctorSummary;
-export declare function renderDoctorReport(checks: readonly DoctorCheck[], profile: string): string;
+/**
+ * Render the report. The profile line names its own provenance, so a reader can
+ * tell "the harness told us we are in `web`" from "nobody told us, this is a
+ * placeholder" without reading the source (F5).
+ */
+export declare function renderDoctorReport(checks: readonly DoctorCheck[], profile: string, profileSource?: ProfileSource): string;
 /** /bridge-doctor entry point; pure over (ctx, args), no global state. */
 export declare function runDoctor(ctx: BridgeContext, _args: Readonly<Record<string, string>>): Promise<CommandResult>;
 //# sourceMappingURL=doctor.d.ts.map

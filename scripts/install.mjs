@@ -11,7 +11,8 @@
  *   3. picks an isolated DSH_HOME so your real ~/.dsh is never touched
  *   4. seeds the profile, then creates .credentials.yaml at mode 600
  *   5. installs dsh-bridge into that profile
- *   6. prints the exact next command
+ *   6. tells dsh-bridge which profile it runs in, so its own doctor reports it
+ *   7. prints the exact next command
  *
  * It is idempotent: every step checks for its own result first and reports
  * "already done" instead of repeating work. It never overwrites a file it did
@@ -22,7 +23,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 const MIN_NODE_MAJOR = 22;
 const MIN_PNPM_MAJOR = 10;
@@ -111,6 +112,12 @@ function parseArgs(argv) {
   if (!opts.dshHome) {
     opts.dshHome = opts.isolate ? join(opts.runtimeDir, "dshhome") : resolve(process.env["DSH_HOME"] ?? join(homedir(), ".dsh"));
   }
+  if (!/^[A-Za-z0-9._-]+$/.test(opts.profile)) {
+    throw new InstallError(
+      `"${opts.profile}" is not a usable profile name`,
+      "Profile names are directory names: letters, digits, dot, dash, underscore.",
+    );
+  }
   return opts;
 }
 
@@ -127,8 +134,11 @@ function capture(command, args, env = {}) {
   });
 }
 
-/** Run a command for its effect, streaming output. Honours --dry-run. */
-function run(opts, command, args, { cwd, env } = {}) {
+/**
+ * Run a command for its effect. Honours --dry-run.
+ * `quiet` captures output instead of streaming it, and only prints it on failure.
+ */
+function run(opts, command, args, { cwd, env, quiet = false } = {}) {
   const printable = [command, ...args].join(" ");
   if (opts.dryRun) {
     plan(`run: ${printable}${cwd ? dim(`  (in ${cwd})`) : ""}`);
@@ -136,7 +146,8 @@ function run(opts, command, args, { cwd, env } = {}) {
   }
   note(`$ ${printable}`);
   const result = spawnSync(command, args, {
-    stdio: "inherit",
+    stdio: quiet ? ["ignore", "pipe", "pipe"] : "inherit",
+    encoding: quiet ? "utf8" : undefined,
     cwd,
     env: { ...process.env, ...env },
     shell: false,
@@ -145,6 +156,7 @@ function run(opts, command, args, { cwd, env } = {}) {
     throw new InstallError(`${command} is not on your PATH`, `Install ${command} and run this script again.`);
   }
   if (result.status !== 0) {
+    if (quiet) process.stderr.write(`${result.stdout ?? ""}${result.stderr ?? ""}`);
     throw new InstallError(`\`${printable}\` exited with code ${result.status}`, `Re-run that command by hand to see the full error, then re-run this script. It is safe to re-run.`);
   }
   return result;
@@ -284,17 +296,17 @@ function prepareHome(opts) {
 /** Seeding writes the profile directory the plugin install and patch need. */
 function seedProfile(opts, dsh, env) {
   step(`Seed profile "${opts.profile}"`);
-  const patch = join(opts.dshHome, "profiles", opts.profile, "cordis.patch.yml");
-  if (existsSync(patch)) {
-    skip(`profile seeded: ${patch}`);
+  const dir = join(opts.dshHome, "profiles", opts.profile);
+  if (existsSync(dir)) {
+    skip(`profile directory exists: ${dir}`);
     return;
   }
-  run(opts, dsh.command, [...dsh.args, "--profile", opts.profile, "--dump-config"], { env, cwd: opts.runtimeDir });
-  if (!opts.dryRun && !existsSync(patch)) {
-    note(`profile patch not created by the harness; that is fine, dsh plugin will create it`);
-  } else if (!opts.dryRun) {
-    ok(`seeded ${patch}`);
-  }
+  // `--dump-config` composes the plugin tree and materialises the profile
+  // directory as a side effect. Its output is not interesting here.
+  run(opts, dsh.command, [...dsh.args, "--profile", opts.profile, "--dump-config"], { env, cwd: opts.runtimeDir, quiet: true });
+  if (opts.dryRun) return;
+  if (existsSync(dir)) ok(`seeded ${dir}`);
+  else note("the harness created no profile directory; dsh plugin will create it in a later step");
 }
 
 /**
@@ -363,8 +375,60 @@ function installBridge(opts, dsh, env) {
   if (!opts.dryRun) ok(`installed ${pluginSpec(opts)}`);
 }
 
+/**
+ * Journey 3.2: the plugin's `Config.profile` defaults to the string "default".
+ * Nothing on the supported install path overrides it, so `/bridge-doctor`
+ * reports DEGRADED against a profile the user never chose. Telling the bridge
+ * row which profile it is actually running in fixes that at the source.
+ *
+ * This is the one place the installer touches a file the user may also edit, so
+ * it is deliberately conservative: it creates the patch when absent, appends to
+ * a list-shaped patch after taking a `.bak`, and otherwise prints the block for
+ * you to paste rather than guessing at your YAML.
+ */
+function configureProfileName(opts) {
+  step("Tell dsh-bridge which profile it runs in");
+  const path = join(opts.dshHome, "profiles", opts.profile, "cordis.patch.yml");
+  const block = `- id: bridge\n  config:\n    profile: ${opts.profile}\n`;
+
+  if (!existsSync(path)) {
+    const header = [
+      "# DSH profile patch, created by the dsh-bridge installer. Yours to edit.",
+      "# The block below tells dsh-bridge which profile it is mounted in, so",
+      "# /bridge-doctor reports this profile instead of defaulting to 'default'.",
+      "# Add your model route here too; see docs/getting-started.md section 5.",
+      "",
+    ].join("\n");
+    writeFile(opts, path, header + block, 0o644);
+    if (!opts.dryRun) ok(`created ${path}`);
+    return;
+  }
+
+  const current = readFileSync(path, "utf8");
+  if (/^\s*-\s*id:\s*bridge\s*$/m.test(current)) {
+    skip("the patch already configures the bridge row, left untouched");
+    return;
+  }
+  const trimmed = current.replace(/^(?:[ \t]*#.*\n|[ \t]*\n)*/, "");
+  if (trimmed.trim() !== "" && !trimmed.startsWith("-")) {
+    note(`${path} is not a YAML list, so appending to it could corrupt it.`);
+    note("Add this to that file yourself, then reboot:");
+    for (const line of block.trimEnd().split("\n")) note(`    ${line}`);
+    return;
+  }
+  if (opts.dryRun) {
+    plan(`copy: ${path} -> ${path}.bak`);
+    plan(`append to ${path}: the "- id: bridge" block naming profile ${opts.profile}`);
+    return;
+  }
+  writeFileSync(`${path}.bak`, current, "utf8");
+  writeFileSync(path, `${current.endsWith("\n") ? current : `${current}\n`}${block}`, "utf8");
+  ok(`appended the bridge profile block to ${path} (previous at ${path}.bak)`);
+}
+
 function printNext(opts, dsh) {
-  const exportLine = `export DSH_HOME=${opts.dshHome}`;
+  const quote = (p) => (/^[A-Za-z0-9._\-\/]+$/.test(p) ? p : `'${p.replaceAll("'", `'\\''`)}'`);
+  const exportLine = `export DSH_HOME=${quote(opts.dshHome)}`;
   const bootCommand = `${dsh.command === "dsh" ? "dsh" : dsh.command} --profile ${opts.profile}`;
   console.log(`\n${bold("Done.")} Your next command:\n`);
   console.log(`    ${exportLine}`);
@@ -395,6 +459,7 @@ function main() {
   seedProfile(opts, dsh, env);
   prepareCredentials(opts);
   installBridge(opts, dsh, env);
+  configureProfileName(opts);
   printNext(opts, dsh);
 }
 

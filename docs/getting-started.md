@@ -1,32 +1,44 @@
 # Getting started
 
-The honest full walkthrough: from a machine with nothing installed to a booted
-DeepSeek Harness with dsh-bridge mounted and a model answering.
+From a machine with nothing installed to a booted DeepSeek Harness with
+dsh-bridge mounted and a model answering. Every friction below was hit in a real
+run and is recorded rather than smoothed over.
 
-If you want the short version, run the installer and skip to
-[Connect a model](#connect-a-model):
+## The short version
 
 ```bash
-node scripts/install.mjs
+curl -fsSLO https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs
+node install.mjs --dry-run     # prints every command and file write, changes nothing
+node install.mjs
 ```
 
-Everything below is what that script does, written out, plus the parts it
-cannot do for you.
+That covers sections 1, 2, 3, 4, and 6 below. It does not cover section 5,
+connecting a model, which is the part that requires your endpoint and your key.
+Skip to [Connect a model](#5-connect-a-model).
 
----
+Sections 1 through 4 and 6 are written out anyway, because the installer is a
+convenience and not a dependency: everything it does you can do by hand, and
+knowing what it did is the difference between fixing a broken install and
+reinstalling it.
 
 ## Prerequisites
+
+Three the installer handles for you, and one it cannot.
 
 | Requirement | Why | Check |
 |---|---|---|
 | Node 22 or newer | The harness runtime targets it | `node --version` |
 | pnpm 10 or newer | `dsh plugin` manages profile dependencies through it | `pnpm --version` |
-| A provider endpoint and API key | DSH ships no model. Nothing answers until you connect one | you supply it |
+| DSH installed | Nothing to mount the plugin into | `dsh --version` |
+| A provider endpoint and API key | DSH ships no model. Nothing answers a prompt until you connect one | you supply it |
 
 To install pnpm: `corepack enable && corepack prepare pnpm@latest --activate`.
 
-DSH itself does not need to be installed first. The installer installs it if it
-is missing, and uses the one on your PATH if it is not.
+DSH does not need to be installed before you start. The installer installs it if
+it is missing and uses the one on your PATH if it is not. A model route is the
+one prerequisite nobody can satisfy on your behalf: **DSH installed and a model
+connected are two separate requirements**, and a harness that boots cleanly with
+no route will still answer nothing.
 
 ---
 
@@ -152,6 +164,38 @@ In the reference run, the model id given in the assignment was rejected outright
 with a region error. One `GET /v1/models` resolves in seconds what otherwise
 costs an hour.
 
+### Smoke-test the route before you boot
+
+A wrong model id, a wrong base URL, and a wrong key all fail the same way inside
+the UI: the prompt goes nowhere. Confirm the endpoint answers first, outside the
+harness, so a later failure is unambiguously the harness's:
+
+```bash
+curl -s https://<your-endpoint>/chat/completions \
+  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"model":"<model-id>","messages":[{"role":"user","content":"say OK"}]}'
+```
+
+A completion body means the three values in your patch are right. An error body
+names which one is wrong. If this fails, no amount of editing YAML will help.
+
+### The two files, complete
+
+After section 5 you have exactly two hand-edited files. Nothing else in
+`$DSH_HOME` is yours to edit.
+
+```
+$DSH_HOME/.credentials.yaml               mode 600, one key per line
+$DSH_HOME/profiles/web/cordis.patch.yml   the provider block and the selection
+```
+
+Check the mode before booting, because an editor that writes through a temp file
+can reset it:
+
+```bash
+stat -f '%Lp %N' "$DSH_HOME/.credentials.yaml"   # want: 600
+```
+
 ## 6. Install dsh-bridge
 
 ```bash
@@ -204,7 +248,7 @@ rather than debug them.
 |---|---|
 | "Choose workspace" does nothing in a browser | The auto picker chose the native backend, which opens a dialog on the *server's* display. A hard stop for remote `dsh web`. See the fix below |
 | Command output renders as truncated one-line chips of raw markdown | The harness renders `command/done` text unformatted. In-box commands render the same way |
-| `/bridge-doctor` reports DEGRADED for a `default` profile you never used | The plugin defaults its profile name rather than deriving it. Ignore the hint to install into `default` |
+| `/bridge-doctor` reports DEGRADED for a `default` profile you never used | The plugin defaults its profile name rather than deriving it. The installer writes the `- id: bridge` / `config.profile` block that fixes this; if you installed by hand, add it yourself (see below) |
 | `/bridge-status` shows MODEL/BRIDGE/TOKENS unavailable | Those seams are declared but not yet populated |
 | `/bridge-browse` says the catalog is unavailable | The published package omits `docs/catalog/manifest.json` |
 
@@ -221,6 +265,18 @@ Fix for the workspace picker, in `$DSH_HOME/profiles/web/cordis.patch.yml`:
 ```
 
 Both faces must be named: the backend and the client surface. Reboot after.
+
+Fix for the DEGRADED doctor report, in the same file. The installer writes this;
+add it by hand if you installed by hand:
+
+```yaml
+- id: bridge
+  config:
+    profile: web
+```
+
+Use the profile name you actually installed into. Without it the plugin reports
+health for a `default` profile that does not exist.
 
 ## Verifying that a command actually ran
 

@@ -69,14 +69,24 @@ export function collectStatus(inputs, readFile) {
     const { services } = inputs;
     const now = inputs.now ?? new Date();
     const rows = [];
-    // S1 profile: always known from the injected context.
-    rows.push({
-        id: "profile",
-        label: "PROFILE",
-        value: `${inputs.profile} (${inputs.dshHome})`,
-        source: "ctx.profile / $DSH_HOME",
-        unavailable: false,
-    });
+    // S1 profile: the name plus where it came from. A fallback is not a fact
+    // about the user's install, so it is not presented as one (F5).
+    const profileSource = inputs.profileSource ?? "config";
+    rows.push(profileSource === "fallback"
+        ? {
+            id: "profile",
+            label: "PROFILE",
+            value: `unavailable (${inputs.dshHome})`,
+            source: "host did not report a mounted profile; dsh --dump-config shows the composed tree",
+            unavailable: true,
+        }
+        : {
+            id: "profile",
+            label: "PROFILE",
+            value: `${inputs.profile} (${inputs.dshHome})`,
+            source: profileSource === "mount" ? "mounted profile (ctx.baseUrl) / $DSH_HOME" : "configured profile / $DSH_HOME",
+            unavailable: false,
+        });
     // S2 active route: reported only, live/dormant flag included when provided.
     const route = services.activeRoute;
     if (route !== undefined) {
@@ -85,7 +95,9 @@ export function collectStatus(inputs, readFile) {
             id: "route",
             label: "MODEL",
             value: `${route.provider}/${route.model}${state}`,
-            source: route.live === false ? "declared but not registered; /bridge-model to switch" : "agent default model selection",
+            source: route.live === false
+                ? "declared but not registered; /bridge-model to switch"
+                : "ctx.agentDefaultModel.currentSelection()",
             unavailable: false,
         });
     }
@@ -94,7 +106,7 @@ export function collectStatus(inputs, readFile) {
             id: "route",
             label: "MODEL",
             value: "unavailable",
-            source: "/bridge-model lists routes",
+            source: "agentDefaultModel not mounted; /bridge-model lists configured routes",
             unavailable: true,
         });
     }
@@ -180,7 +192,7 @@ export function collectStatus(inputs, readFile) {
             id: "tokens",
             label: "TOKENS",
             value: "unavailable",
-            source: "token-meter not mounted on ctx",
+            source: "token-meter projections not mounted on ctx",
             unavailable: true,
         });
     }
@@ -192,12 +204,17 @@ export function collectStatus(inputs, readFile) {
             parts.push(`cache-write ${usage.cacheWriteTokens}`);
         let value = parts.join(", ");
         if (usage.contextWindow !== undefined && usage.contextWindow > 0) {
-            // Reference figure only, never billing truth (token-meter README).
-            const projected = usage.uncachedInputTokens +
-                usage.outputTokens +
-                (usage.cacheReadTokens ?? 0) +
-                (usage.cacheWriteTokens ?? 0);
-            const pct = Math.round((projected / usage.contextWindow) * 100);
+            // Occupancy is the newest request's prompt against the route capacity.
+            // `pressureTokens` is the provider-anchored figure for exactly that and is
+            // preferred; the cumulative sum is a fallback and grows across turns, so
+            // it can exceed the window. Reference only, never billing truth
+            // (token-meter projection.d.ts:18-27).
+            const occupancy = usage.pressureTokens ??
+                usage.uncachedInputTokens +
+                    usage.outputTokens +
+                    (usage.cacheReadTokens ?? 0) +
+                    (usage.cacheWriteTokens ?? 0);
+            const pct = Math.round((occupancy / usage.contextWindow) * 100);
             value += `, ~${pct}% of ${usage.contextWindow}`;
         }
         rows.push({ id: "tokens", label: "TOKENS", value, source: "token-meter session projection", unavailable: false });
@@ -243,10 +260,15 @@ export function renderStatus(ctx, collected, installedCount, drift = []) {
 /** `/bridge-status` runner. Read-only; zero network calls by construction. */
 export async function runStatus(ctx, _args, options = {}) {
     void _args;
-    const services = options.services ?? {};
+    // The harness facts read at the mount point (lib/host.ts) are the default
+    // source for S2/S3/S6; an explicit `services` argument still wins so tests
+    // and future callers can substitute. This is the wiring whose absence made
+    // three rows read `unavailable` on a healthy install (F6, journey 3.3).
+    const services = { ...(ctx.host ?? {}), ...(options.services ?? {}) };
     const indexPath = options.indexPath ?? resolveIndexPath() ?? "";
     const collected = collectStatus({
         profile: ctx.profile,
+        profileSource: ctx.profileSource,
         dshHome: ctx.paths.dshHome,
         indexMdPath: indexPath,
         services,

@@ -16,6 +16,12 @@ export declare const MAX_CREDENTIAL_FILE_BYTES: number;
 export declare function homeDir(): string;
 /** `$DSH_HOME` or the documented default `$HOME/.dsh` (seams doc §3.2). */
 export declare function dshHomeDir(home?: string): string;
+/**
+ * Directory under `$DSH_HOME` holding every profile. Mirrors the harness
+ * constant `PROFILES_DIR` (`@deepseek-ai/dsh-app-boot/lib/types/profile.d.ts:27`)
+ * so profile-name derivation in host.ts anchors on the same layout.
+ */
+export declare const PROFILES_DIR = "profiles";
 /** Active profile patch file: `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. */
 export declare function profilePatchPath(profile: string, dshHome?: string): string;
 /** Profile manifest maintained by `dsh plugin`: `$DSH_HOME/profiles/<p>/package.json`. */

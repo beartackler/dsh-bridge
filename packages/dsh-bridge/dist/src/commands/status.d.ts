@@ -13,7 +13,7 @@
  * and S6 token usage when ctx provides it.
  */
 import { type DriftEntry } from "../lib/drift.js";
-import type { BridgeContext, CommandResult } from "../lib/types.js";
+import type { BridgeContext, CommandResult, HostServices, ProfileSource } from "../lib/types.js";
 /** A catalog card older than this many days is stale (task + spec S5). */
 export declare const STALE_AFTER_DAYS = 30;
 /**
@@ -21,42 +21,15 @@ export declare const STALE_AFTER_DAYS = 30;
  * absence is rendered as `unavailable` with the producing command named, per
  * status spec data-source table rows S2/S4/S6. Tests inject doubles here.
  */
-export interface StatusServices {
+export interface StatusServices extends HostServices {
     /**
-     * Active model route selection, e.g. `{ provider: "deepseek", model:
-     * "deepseek-chat" }`. Mirrors the agent-default-model currentSelection seam
-     * (S2); absent means no route source is mounted.
-     */
-    readonly activeRoute?: {
-        readonly provider: string;
-        readonly model: string;
-        /** True when the route's adapter is registered in this composition. */
-        readonly live?: boolean;
-    };
-    /**
-     * Bridge features actually mounted in this composition (S3), e.g.
-     * ["connectors flow", "trust layer"]. Rendered verbatim; never inferred.
-     */
-    readonly mountedFeatures?: readonly string[];
-    /**
-     * Last connector smoke result persisted by /bridge-connect (S4).
+     * Last connector smoke result persisted by /bridge-connect (S4). Unlike the
+     * other three, this one is the plugin's own record, not a harness service.
      */
     readonly lastSmoke?: {
         readonly ok: boolean;
         readonly provider: string;
         readonly at: string;
-    };
-    /**
-     * Token usage projection for this session (S6): uncached input, output,
-     * cache read/write tokens, and the advertised context window when known.
-     */
-    readonly tokenUsage?: {
-        readonly uncachedInputTokens: number;
-        readonly outputTokens: number;
-        readonly cacheReadTokens?: number;
-        readonly cacheWriteTokens?: number;
-        /** Advertised context window in tokens; occupancy renders only with it. */
-        readonly contextWindow?: number;
     };
 }
 /** One dashboard row after collection: value plus provenance line. */
@@ -87,6 +60,8 @@ export declare function parseCatalogIndex(markdown: string): CatalogCard[];
 /** Inputs collected once at the call boundary so collection stays pure. */
 export interface StatusInputs {
     readonly profile: string;
+    /** Provenance of `profile`; a fallback name is not reported as a fact (F5). */
+    readonly profileSource?: ProfileSource;
     readonly dshHome: string;
     /** Absolute path to docs/catalog/INDEX.md; existence probed, never assumed. */
     readonly indexMdPath: string;

@@ -1,12 +1,12 @@
 {
   "generatedFrom": "docs/catalog/INDEX.md + docs/catalog/manifest.json",
-  "generatedAt": "2026-08-26T12:36:48.189Z",
+  "generatedAt": "2026-08-27T01:59:17.047Z",
   "snapshot": "2026-08-19",
   "distribution": {
     "A": 0,
-    "B": 11,
-    "C": 29,
-    "D": 3,
+    "B": 14,
+    "C": 44,
+    "D": 4,
     "F": 0
   },
   "grades": [
@@ -24,7 +24,10 @@
     "identity",
     "market",
     "memory",
+    "remote",
     "security",
+    "skill",
+    "theme",
     "tools",
     "ui",
     "uncategorized",
@@ -152,6 +155,42 @@
       "category": "usage",
       "description": "DSH context insight panel: Context dashboard + /context command + Context browser — one-stop context lifecycle management with categorized composition, content details, evolution trends, compaction/injection events, and stats.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-context.md"
+    },
+    {
+      "grade": "B",
+      "name": "dsh-full-remote",
+      "repo": "JUANWANG-BUAA/dsh-full-remote",
+      "stars": 15,
+      "verdict": "Exposes your DSH instance to other devices and does that one job defensively: 192-bit token gate with per-device sessions, hash-only cookie secrets, constant-time comparison, loopback-only control plane, CIDR allowlists, SHA256-pinned cloudflared downloads, no telemetry or credential access in shipped source.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-full-remote.md",
+      "category": "remote",
+      "description": "Remote DeepSeek Harness with full server-side API access (`settings.*` / `credentials.*` / `host.listDirectory`). Token-gated reverse proxy, per-device sessions, phone invite QR, fence self-check, optional approval / CIDR / idle timeout / local TLS, WebSocket/SSE.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-full-remote.md"
+    },
+    {
+      "grade": "B",
+      "name": "dsh-vision (`@linenxi-ctrl/dsh-vision`)",
+      "repo": "linenxi-ctrl/dsh-vision",
+      "stars": 12,
+      "verdict": "Sends your images and its one API key to exactly one place - the API base you type into its own panel - and nowhere else, but its one-click installer rewrites DSH configuration files and can download a Node.js runtime from third-party mirrors without checksum verification.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-vision.md",
+      "category": "vision",
+      "description": "External vision plugin for DeepSeek Harness: whale-button config panel, image recognition with auto-reply, and agent screenshot/recognize tools.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-vision.md"
+    },
+    {
+      "grade": "B",
+      "name": "dsh-read-url",
+      "repo": "2672243194/dsh-read-url",
+      "stars": 11,
+      "verdict": "A fetch-and-extract tool that talks to whatever URL it is handed and nothing else: no credentials exist to steal, no telemetry, no dynamic code execution in shipped files, and its one child process is curl invoked through your own configured proxy.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-read-url.md",
+      "category": "browser",
+      "description": "Read any page as clean main content: charset auto-detect (GBK/GB2312/UTF-8/Big5), noise stripping, compact text/Markdown, offset continuation, optional SPA rendering, batch reads and site crawling.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-read-url.md"
     },
     {
       "grade": "B",
@@ -359,18 +398,6 @@
     },
     {
       "grade": "C",
-      "name": "desktop-cc-gui (ccgui; not a plugin)",
-      "repo": "zhukunpenglinyutong/desktop-cc-gui",
-      "stars": 4100,
-      "verdict": "The DSH integration is a disciplined loopback-first RPC client that refuses to spawn the host except on explicit request, but adopting this desktop platform means accepting an undisclosed Baidu Analytics beacon on every launch with no consent or toggle, an optional remote service that binds all interfaces by default, and bundled skills that execute Vercel CLI and Doubao TTS calls inside agent sessions.",
-      "verified": "2026-08-26",
-      "card": "cards/desktop-cc-gui.md",
-      "category": "uncategorized",
-      "description": "",
-      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/desktop-cc-gui.md"
-    },
-    {
-      "grade": "C",
       "name": "PetDex bridge (`@petdex/dsh-plugin`)",
       "repo": "crafter-station/petdex",
       "stars": 3975,
@@ -383,6 +410,18 @@
     },
     {
       "grade": "C",
+      "name": "dsh-anchored-standard (preset collection)",
+      "repo": "xiaobright/dsh-anchored-standard",
+      "stars": 3800,
+      "verdict": "A small, dependency-free preset repository with no network egress anywhere in shipped code and argv-form spawns throughout, capped at C by the incomplete pipeline and by what the product is: presets that deliberately reshape the model's first-request tool schema and inject instruction text into sessions, shipped by a project now in maintenance-only mode.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-anchored-standard.md",
+      "category": "workflow",
+      "description": "Two-phase agent preset for DeepSeek V4 Pro: the first request sees only bash+read (Minimal-aligned bootstrap), then the full Standard tool catalog after the first tool call or reply; ships as an installer bundle plus a manual preset directory.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-anchored-standard.md"
+    },
+    {
+      "grade": "C",
       "name": "mirage (`@struktoai/mirage-dsh`)",
       "repo": "strukto-ai/mirage",
       "stars": 3520,
@@ -392,6 +431,18 @@
       "category": "dev",
       "description": "Swaps the filesystem and bash providers for a mirage virtual workspace: file tools and shell commands run over mounted resources (RAM, S3, Redis, Slack, Gmail, Notion, Postgres) instead of the host disk, with per-mount read/write/exec modes, per-command sandbox routing (monty, pyodide, quickjs in process; docker, e2b, daytona remote), and installed CLIs (git, gh, slack, linear, ntn, gws, or one you register) as head words in the virtual terminal.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/mirage.md"
+    },
+    {
+      "grade": "C",
+      "name": "ReMe memory layer (`@agentscope-ai/reme`)",
+      "repo": "agentscope-ai/reme",
+      "stars": 3300,
+      "verdict": "Zero critical or credential findings and an unusually clean egress map - every network path goes to a loopback service you run or endpoints you configure - but auto-memory ships your session content to that local service by design, its inner agent can call paid LLM APIs, and the incomplete pipeline caps the grade regardless.",
+      "verified": "2026-08-26",
+      "card": "cards/reme.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/reme.md"
     },
     {
       "grade": "C",
@@ -419,6 +470,30 @@
     },
     {
       "grade": "C",
+      "name": "dashi-taskboard (`codex-taskboard`)",
+      "repo": "chuspeeism/dashi-taskboard",
+      "stars": 2600,
+      "verdict": "Shipped runtime contacts nothing beyond loopback plus endpoints you deploy yourself and both scanner criticals are test fixtures, but LAN sharing is unauthenticated on a wildcard bind by default, the launcher drives the Codex desktop app over CDP by design, and the bundled skill steers agents into autonomous board-driven work cycles.",
+      "verified": "2026-08-26",
+      "card": "cards/dashi-taskboard.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dashi-taskboard.md"
+    },
+    {
+      "grade": "C",
+      "name": "dshdesktop (`dsh-desktop`)",
+      "repo": "dataelement/dsh-desktop",
+      "stars": 2500,
+      "verdict": "A disciplined telemetry-free Electron host whose renderer sandboxing and consent-gated updates check out clean, but it polls a vendor update feed every six hours, its market button installs `dshmarket@latest` at click time, and its optional phone tunnel executes a downloaded cloudflared binary whose pinned checksum is never verified.",
+      "verified": "2026-08-26",
+      "card": "cards/dshdesktop.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dshdesktop.md"
+    },
+    {
+      "grade": "C",
       "name": "dsh-tui (`@deepseek-harness-tui/dsh-tui`)",
       "repo": "ccch1mneyyy/dsh-TUI",
       "stars": 2009,
@@ -440,6 +515,42 @@
       "category": "uncategorized",
       "description": "",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/bitfun.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-deep-whale skins (`@dsh-external/dsh-client-ui-skin-*`)",
+      "repo": "Small-tailqwq/dsh-deep-whale",
+      "stars": 1734,
+      "verdict": "Cosmetic skin system with no telemetry and skins containing zero network code, but the manager rewrites `~/.dsh` profile patches and shells out to git, checks api.github.com for updates, and installs from a moving GitHub ref while shipping 4.6 MB of unreproduced build output.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-deep-whale.md",
+      "category": "theme",
+      "description": "Whale-girl skin series for the DSH Web UI (maid-atelier).",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-deep-whale.md"
+    },
+    {
+      "grade": "C",
+      "name": "Token Monitor (`token-monitor`)",
+      "repo": "Javis603/token-monitor",
+      "stars": 1700,
+      "verdict": "Every credential it touches (files, env vars, macOS Keychain, Windows Credential Manager, `~/.codex/auth.json`) flows only to the provider that issued it and nothing phones home, but the breadth of secret stores read plus an auth.json write path gives a compromised upstream an outsized blast radius, and hub sync trusts whatever operator you point it at.",
+      "verified": "2026-08-26",
+      "card": "cards/token-monitor.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/token-monitor.md"
+    },
+    {
+      "grade": "C",
+      "name": "last30days-skill-cn (`last30days-cn`; agent skill, not a plugin)",
+      "repo": "Jesseovo/last30days-skill-cn",
+      "stars": 1637,
+      "verdict": "Clean dependency-light Python with no telemetry, no dynamic execution, careful secret handling, and URLs resolving only to the eight platforms it advertises - but it drives a real Chromium browser, persists each platform's cookies to your home directory, and exists to scrape platforms whose terms it asks you to respect.",
+      "verified": "2026-08-26",
+      "card": "cards/last30days-skill-cn.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/last30days-skill-cn.md"
     },
     {
       "grade": "C",
@@ -467,6 +578,18 @@
     },
     {
       "grade": "C",
+      "name": "dsh-vision-toolkit (`@anionex/dsh-vision-toolkit`)",
+      "repo": "Anionex/dsh-vision-toolkit",
+      "stars": 831,
+      "verdict": "Nothing hostile found: hash-verified vendored runtime, mock-keychain blackhole-proxied headless Chrome, secrets redacted end to end - but the default vision endpoint is the author's own hosted service, npm provenance is unverifiable, and a mirror-first pip path with version-only pins caps it at C.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-vision-toolkit.md",
+      "category": "vision",
+      "description": "Vision for text-only models: paste an image and the model switches to a Vision Toolkit variant for image Q&A, multi-image comparison, long-screenshot OCR, screenshot-to-UI reproduction, element grounding, and pixel diff. No API key by default — images are processed by the author-hosted free service, 100 per machine per day; configurable to your own provider.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-vision-toolkit.md"
+    },
+    {
+      "grade": "C",
       "name": "api-relay-audit",
       "repo": "toby-bridges/api-relay-audit",
       "stars": 791,
@@ -476,6 +599,102 @@
       "category": "security",
       "description": "Runs local security audits of AI API relays and LLM proxies from DeepSeek Harness, producing Markdown reports for prompt injection, model substitution signals, tool-call rewriting, error leakage, stream integrity, and profile-gated Web3 risks.",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/api-relay-audit.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-browser (`@yuxianglin/dsh-bridge-browser`)",
+      "repo": "Lum1104/dsh-browser",
+      "stars": 464,
+      "verdict": "Content scripts on every page plus an agent driving your logged-in tab, yet all egress stays loopback except a user-clicked update check, password/card fields are masked before leaving the page, actions are origin-gated, and privileged bridge methods refuse non-loopback callers; defaults auto-share page reads and installs float on main.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-browser.md",
+      "category": "browser",
+      "description": "Chrome sidebar extension that lets DSH operate your browser directly, no vision capabilities required.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-browser.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-at-file (`dsh-at-file` 0.6.8)",
+      "repo": "omdsh-dev/dsh-at-file",
+      "stars": 394,
+      "verdict": "A single-purpose composer plugin whose shipped code performs no network I/O and no credential access anywhere and which never opens the files it references, capped at C by a dynamic-evaluation construct inherited from a bundled vendored schemastery copy and by npm provenance that could not be tied to this commit.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-at-file.md",
+      "category": "ui",
+      "description": "Codex-style `@file` mentions: search workspace files in the composer and attach their contents to prompts.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-at-file.md"
+    },
+    {
+      "grade": "C",
+      "name": "AI Novel Writer plugin (`@ethanyoq/dsh-ai-novel-writer`)",
+      "repo": "EthanYoQ/AI-Novel-Writer",
+      "stars": 393,
+      "verdict": "The DSH plugin itself is disciplined - no egress, no dynamic execution, every write approval-gated, browser clients barred from supplying paths - but adopting this repository means co-installing an Electron desktop suite whose model API keys sit in plaintext JSON, whose Windows builds ship an auto-updater, and whose release tooling pairs environment credentials with GitHub network calls.",
+      "verified": "2026-08-26",
+      "card": "cards/ai-novel-writer.md",
+      "category": "workflow",
+      "description": "Installs a dedicated AI novel-writing preset and workbench: revisioned local project assets, a compact side drawer, and native approval-gated single-file changes.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/ai-novel-writer.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-harmony-next (`dsh-harmony-next` 1.3.35)",
+      "repo": "linhay/harmony-next.skills",
+      "stars": 330,
+      "verdict": "The cleanest scan surface in this catalog line - zero criticals or highs, one low-severity string literal - with every byte of real capability living in user-invoked Python tooling that drives your local devices over hdc plus one documented Huawei download flow, capped at C solely by the incomplete pipeline and a release zip never verified against this commit.",
+      "verified": "2026-08-26",
+      "card": "cards/harmony-next.skills.md",
+      "category": "skill",
+      "description": "HarmonyOS NEXT skill bundle for DeepSeek Harness with offline API references and DevEco, HDC, and emulator automation guidance.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/harmony-next.skills.md"
+    },
+    {
+      "grade": "C",
+      "name": "modsearch (`@liustack/modsearch`)",
+      "repo": "liustack/modsearch",
+      "stars": 283,
+      "verdict": "Attested, clean code whose business is sending queries and URLs to search providers - exemplary SSRF fence, existence-check-only credential access, loopback-fenced settings route - but Firecrawl keyless mode discloses searches to the cloud by default and the pipeline ceiling applies.",
+      "verified": "2026-08-26",
+      "card": "cards/modsearch.md",
+      "category": "browser",
+      "description": "Web search bridge for text-only agents: ask the web or X, get structured JSON evidence (search, fetch, citations).",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/modsearch.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-web-mobile (`@dsh-external/dsh-mobile-nav`)",
+      "repo": "mexiaosqwq/dsh-web-mobile",
+      "stars": 31,
+      "verdict": "A client-side CSS/DOM shell plus a host-side response compressor with zero live egress beyond your own loopback DSH instance; every scanner alarm traced to a dev-only probe script or bundler mechanics, and the pipeline ceiling holds it at C.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-web-mobile.md",
+      "category": "remote",
+      "description": "Mobile-adaptive layout for the DSH Web UI: the sidebar becomes a content-hugging overlay drawer, the conversation gets the full width, and the settings panel becomes a near-full-width sheet.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-web-mobile.md"
+    },
+    {
+      "grade": "C",
+      "name": "dsh-web-search-pro",
+      "repo": "anweat/dsh-web-search-pro",
+      "stars": 27,
+      "verdict": "Does exactly what it says - talks to whatever search engines and platforms you point it at, including jina.ai readers, Exa's paid API, and login-walled Chinese platforms using cookies you hand it - with disciplined SSRF fencing, but broad outbound fetching on the model's behalf is inherent surface.",
+      "verified": "2026-08-26",
+      "card": "cards/dsh-web-search-pro.md",
+      "category": "browser",
+      "description": "Persistent enhanced web search: multi-engine routing (DeepSeek/Exa/DDG/Bing/Jina + GitHub/Bilibili/YouTube/V2EX/Xiaohongshu/Twitter/Reddit/RSS), SQLite+LRU cache, userscript-style extraction, Playwright rendering.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-web-search-pro.md"
+    },
+    {
+      "grade": "C",
+      "name": "deepseek-harness-remote (`ds-harness-remote`)",
+      "repo": "liguobao/deepseek-harness-remote",
+      "stars": 23,
+      "verdict": "Noise IK end-to-end encryption with pinned peer identities, 0600 credential stores, and a loopback-only control plane, but by design it hands your session, workspace, and settings surface to any device on your account through a hosted relay you do not control.",
+      "verified": "2026-08-26",
+      "card": "cards/deepseek-harness-remote.md",
+      "category": "remote",
+      "description": "Multi-device remote access for DeepSeek Harness: continue an active session from your phone, tablet, browser, or another computer over an end-to-end encrypted channel (Noise IK + adaptive relay/WebRTC transport), with device authorization, ApiProxy-only remote capabilities, and read-only file preview via dsh-file-viewer — no shell, remote desktop, or write access.",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/deepseek-harness-remote.md"
     },
     {
       "grade": "C",
@@ -536,6 +755,18 @@
       "category": "uncategorized",
       "description": "",
       "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/dsh-routing-suite.md"
+    },
+    {
+      "grade": "D",
+      "name": "desktop-cc-gui (ccgui; not a plugin)",
+      "repo": "zhukunpenglinyutong/desktop-cc-gui",
+      "stars": 4100,
+      "verdict": "The DSH integration is a disciplined loopback-first RPC client that refuses to spawn the host except on explicit request, but adopting this desktop platform means accepting an undisclosed Baidu Analytics beacon on every launch with no consent or toggle, an optional remote service that binds all interfaces by default, and bundled skills that execute Vercel CLI and Doubao TTS calls inside agent sessions.",
+      "verified": "2026-08-26",
+      "card": "cards/desktop-cc-gui.md",
+      "category": "uncategorized",
+      "description": "",
+      "cardUrl": "https://github.com/beartackler/dsh-bridge/blob/main/docs/catalog/cards/desktop-cc-gui.md"
     },
     {
       "grade": "D",

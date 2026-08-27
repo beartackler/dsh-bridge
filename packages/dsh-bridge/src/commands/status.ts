@@ -20,7 +20,7 @@ import { catalogEntry } from "../lib/catalog-paths.js";
 
 import { driftStatusLine, installedDrift, type DriftEntry } from "../lib/drift.js";
 import { gradeCell, heading } from "../lib/output.js";
-import type { BridgeContext, CommandResult } from "../lib/types.js";
+import type { BridgeContext, CommandResult, HostServices, ProfileSource } from "../lib/types.js";
 
 /** A catalog card older than this many days is stale (task + spec S5). */
 export const STALE_AFTER_DAYS = 30;
@@ -30,42 +30,15 @@ export const STALE_AFTER_DAYS = 30;
  * absence is rendered as `unavailable` with the producing command named, per
  * status spec data-source table rows S2/S4/S6. Tests inject doubles here.
  */
-export interface StatusServices {
+export interface StatusServices extends HostServices {
   /**
-   * Active model route selection, e.g. `{ provider: "deepseek", model:
-   * "deepseek-chat" }`. Mirrors the agent-default-model currentSelection seam
-   * (S2); absent means no route source is mounted.
-   */
-  readonly activeRoute?: {
-    readonly provider: string;
-    readonly model: string;
-    /** True when the route's adapter is registered in this composition. */
-    readonly live?: boolean;
-  };
-  /**
-   * Bridge features actually mounted in this composition (S3), e.g.
-   * ["connectors flow", "trust layer"]. Rendered verbatim; never inferred.
-   */
-  readonly mountedFeatures?: readonly string[];
-  /**
-   * Last connector smoke result persisted by /bridge-connect (S4).
+   * Last connector smoke result persisted by /bridge-connect (S4). Unlike the
+   * other three, this one is the plugin's own record, not a harness service.
    */
   readonly lastSmoke?: {
     readonly ok: boolean;
     readonly provider: string;
     readonly at: string;
-  };
-  /**
-   * Token usage projection for this session (S6): uncached input, output,
-   * cache read/write tokens, and the advertised context window when known.
-   */
-  readonly tokenUsage?: {
-    readonly uncachedInputTokens: number;
-    readonly outputTokens: number;
-    readonly cacheReadTokens?: number;
-    readonly cacheWriteTokens?: number;
-    /** Advertised context window in tokens; occupancy renders only with it. */
-    readonly contextWindow?: number;
   };
 }
 
@@ -137,6 +110,8 @@ export function parseCatalogIndex(markdown: string): CatalogCard[] {
 /** Inputs collected once at the call boundary so collection stays pure. */
 export interface StatusInputs {
   readonly profile: string;
+  /** Provenance of `profile`; a fallback name is not reported as a fact (F5). */
+  readonly profileSource?: ProfileSource;
   readonly dshHome: string;
   /** Absolute path to docs/catalog/INDEX.md; existence probed, never assumed. */
   readonly indexMdPath: string;
@@ -160,14 +135,26 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
   const now = inputs.now ?? new Date();
   const rows: StatusRow[] = [];
 
-  // S1 profile: always known from the injected context.
-  rows.push({
-    id: "profile",
-    label: "PROFILE",
-    value: `${inputs.profile} (${inputs.dshHome})`,
-    source: "ctx.profile / $DSH_HOME",
-    unavailable: false,
-  });
+  // S1 profile: the name plus where it came from. A fallback is not a fact
+  // about the user's install, so it is not presented as one (F5).
+  const profileSource = inputs.profileSource ?? "config";
+  rows.push(
+    profileSource === "fallback"
+      ? {
+          id: "profile",
+          label: "PROFILE",
+          value: `unavailable (${inputs.dshHome})`,
+          source: "host did not report a mounted profile; dsh --dump-config shows the composed tree",
+          unavailable: true,
+        }
+      : {
+          id: "profile",
+          label: "PROFILE",
+          value: `${inputs.profile} (${inputs.dshHome})`,
+          source: profileSource === "mount" ? "mounted profile (ctx.baseUrl) / $DSH_HOME" : "configured profile / $DSH_HOME",
+          unavailable: false,
+        },
+  );
 
   // S2 active route: reported only, live/dormant flag included when provided.
   const route = services.activeRoute;
@@ -177,7 +164,10 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
       id: "route",
       label: "MODEL",
       value: `${route.provider}/${route.model}${state}`,
-      source: route.live === false ? "declared but not registered; /bridge-model to switch" : "agent default model selection",
+      source:
+        route.live === false
+          ? "declared but not registered; /bridge-model to switch"
+          : "ctx.agentDefaultModel.currentSelection()",
       unavailable: false,
     });
   } else {
@@ -185,7 +175,7 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
       id: "route",
       label: "MODEL",
       value: "unavailable",
-      source: "/bridge-model lists routes",
+      source: "agentDefaultModel not mounted; /bridge-model lists configured routes",
       unavailable: true,
     });
   }
@@ -270,7 +260,7 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
       id: "tokens",
       label: "TOKENS",
       value: "unavailable",
-      source: "token-meter not mounted on ctx",
+      source: "token-meter projections not mounted on ctx",
       unavailable: true,
     });
   } else {
@@ -279,13 +269,18 @@ export function collectStatus(inputs: StatusInputs, readFile: (path: string) => 
     if (usage.cacheWriteTokens !== undefined) parts.push(`cache-write ${usage.cacheWriteTokens}`);
     let value = parts.join(", ");
     if (usage.contextWindow !== undefined && usage.contextWindow > 0) {
-      // Reference figure only, never billing truth (token-meter README).
-      const projected =
+      // Occupancy is the newest request's prompt against the route capacity.
+      // `pressureTokens` is the provider-anchored figure for exactly that and is
+      // preferred; the cumulative sum is a fallback and grows across turns, so
+      // it can exceed the window. Reference only, never billing truth
+      // (token-meter projection.d.ts:18-27).
+      const occupancy =
+        usage.pressureTokens ??
         usage.uncachedInputTokens +
-        usage.outputTokens +
-        (usage.cacheReadTokens ?? 0) +
-        (usage.cacheWriteTokens ?? 0);
-      const pct = Math.round((projected / usage.contextWindow) * 100);
+          usage.outputTokens +
+          (usage.cacheReadTokens ?? 0) +
+          (usage.cacheWriteTokens ?? 0);
+      const pct = Math.round((occupancy / usage.contextWindow) * 100);
       value += `, ~${pct}% of ${usage.contextWindow}`;
     }
     rows.push({ id: "tokens", label: "TOKENS", value, source: "token-meter session projection", unavailable: false });
@@ -362,11 +357,16 @@ export async function runStatus(
   } = {},
 ): Promise<CommandResult> {
   void _args;
-  const services: StatusServices = options.services ?? {};
+  // The harness facts read at the mount point (lib/host.ts) are the default
+  // source for S2/S3/S6; an explicit `services` argument still wins so tests
+  // and future callers can substitute. This is the wiring whose absence made
+  // three rows read `unavailable` on a healthy install (F6, journey 3.3).
+  const services: StatusServices = { ...(ctx.host ?? {}), ...(options.services ?? {}) };
   const indexPath = options.indexPath ?? resolveIndexPath() ?? "";
   const collected = collectStatus(
     {
       profile: ctx.profile,
+      profileSource: ctx.profileSource,
       dshHome: ctx.paths.dshHome,
       indexMdPath: indexPath,
       services,

@@ -51,10 +51,68 @@ export type CommandArgs = Readonly<Record<string, string>>;
 export interface BridgeContext {
   /** Active DSH profile name (`--profile` target), e.g. `web`. */
   readonly profile: string;
+  /**
+   * How `profile` was determined. `mount` is authoritative: the harness itself
+   * told us. `config` is a user-supplied name. `fallback` is a placeholder the
+   * user never asked for, so no check may grade against it (journey report 3.2,
+   * defect F5).
+   */
+  readonly profileSource: ProfileSource;
   /** Filesystem locations this plugin reads or writes (never secrets). */
   readonly paths: BridgePaths;
   /** Markdown rendering helpers shared by all command modules. */
   readonly output: OutputHelpers;
+  /**
+   * Facts read live from the mounted harness services, when any are mounted.
+   * Empty on a composition that mounts none; a command degrades exactly the
+   * row whose source is absent, never fabricating a value.
+   */
+  readonly host?: HostServices;
+}
+
+/** Provenance of a resolved profile name. */
+export type ProfileSource = "mount" | "config" | "fallback";
+
+/** A profile name plus the provenance that decides whether it may be graded. */
+export interface ProfileResolution {
+  readonly name: string;
+  readonly source: ProfileSource;
+}
+
+/**
+ * Host-sourced status facts, read once per invocation by `lib/host.ts` from the
+ * services the DSH UI footer itself uses. Every field is optional: absence
+ * means the service is genuinely not mounted.
+ */
+export interface HostServices {
+  /**
+   * Active model route from `ctx.agentDefaultModel.currentSelection()`
+   * (`@deepseek-ai/dsh-agent-default-model/lib/types/index.d.ts:40-48`), or the
+   * invoking agent's own override (`Agent.options`,
+   * `@deepseek-ai/dsh-agent/lib/types/runtime-types.d.ts:60-66`).
+   */
+  readonly activeRoute?: {
+    readonly provider: string;
+    readonly model: string;
+    /** True when the route came from a mounted service rather than config. */
+    readonly live?: boolean;
+  };
+  /**
+   * Cumulative provider usage for this session, from the `tokenUsage` and
+   * `contextPressure` projections the token-meter registers
+   * (`@deepseek-ai/dsh-token-meter/lib/types/projection.d.ts:12-17, 28-45, 64-71`).
+   */
+  readonly tokenUsage?: {
+    readonly uncachedInputTokens: number;
+    readonly outputTokens: number;
+    readonly cacheReadTokens?: number;
+    readonly cacheWriteTokens?: number;
+    readonly contextWindow?: number;
+    /** Provider-anchored prompt size of the newest request, when reported. */
+    readonly pressureTokens?: number;
+  };
+  /** Bridge features the composition actually mounted; rendered verbatim. */
+  readonly mountedFeatures?: readonly string[];
 }
 
 /** Path constants and derived locations used by detection and config writes. */

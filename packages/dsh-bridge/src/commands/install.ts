@@ -1,12 +1,17 @@
 /**
- * `/bridge-install` - verified installer front-end (docs/specs/commands/install.md).
+ * `/bridge-install` - verified installer (docs/specs/commands/install.md).
  *
- * Scope of this phase: everything up to, but not including, execution. The
- * command resolves a name against the committed catalog, renders the trust
- * summary, runs the consent gate, and then *prints* the native install command
- * for the user to run. It never spawns `dsh plugin`, never writes a profile,
- * and never touches the network (ponytail discipline: the review half of the
- * spec is the half that carries the risk).
+ * The command resolves a name against the committed catalog, shows the grade
+ * with the two worst findings quoted verbatim and their provenance, runs the
+ * consent gate, and then, with `--yes`, executes the documented
+ * `dsh plugin add` through the host exec seam and verifies that a layer
+ * actually mounted.
+ *
+ * Without `--yes` nothing runs: the command stops at the consent gate and
+ * prints the exact line it would execute. That default is the point. The gate
+ * must sit on the path a user actually walks, which is why the execution half
+ * exists at all (docs/reviews/pm-product-review.md §2.4), and it must never be
+ * satisfiable by anything short of a typed flag.
  *
  * Catalog inputs, both committed and read-only:
  *   docs/catalog/manifest.json  entries (`name`, `repo`, `url`, `category`, ...)
@@ -17,17 +22,36 @@
  *  - Ambiguity is never resolved silently (spec §3): candidates are listed and
  *    nothing is emitted.
  *  - Unverified, D, and F entries require the explicit
- *    `--i-accept-unverified-risk` flag; F additionally requires `--force`
- *    (AC-9, AC-10). No keypress, `--yes`, or bare Enter satisfies the gate.
+ *    `--i-accept-unverified-risk` flag (spelled `--i-accept-unreviewed-risk`
+ *    equivalently); F additionally requires `--force` (AC-9, AC-10). No
+ *    keypress, `--yes`, or bare Enter satisfies the gate.
  *  - Missing/unparseable catalog fails closed to unverified with a degraded
  *    banner (F-4 / AC-23).
  *  - Every emitted command is accompanied by its undo command (AC-21).
+ *  - Nothing is ever installed without consent: `--yes` alone is inert on the
+ *    unverified path, and no execution happens on any blocked path.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 
 import { catalogEntry, unavailableDetail } from "../lib/catalog-paths.js";
+import {
+  cardFilePath,
+  cardProvenance,
+  executeInstall,
+  execSeamOf,
+  noExecSeamFailure,
+  stageSource,
+  worstCardFindings,
+  type ExecSeam,
+  type InstallChange,
+  type InstallFailure,
+  type ProgressFn,
+  type Provenance,
+  type QuotedFinding,
+} from "../lib/install-exec.js";
 import { gradeCell, gradeLabel } from "../lib/output.js";
+import { scanDirectory, type ScanReport } from "../lib/scan-client.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 
 /** Grades the catalog can carry. `?` means graded row absent. */
@@ -38,6 +62,13 @@ const CONSENT_FREE_GRADES: readonly Grade[] = ["A", "B", "C"];
 
 /** Flag that alone satisfies the §5.3 risk gate. Never suggested by the UI. */
 export const RISK_FLAG = "i-accept-unverified-risk";
+
+/**
+ * Accepted spelling of the same gate. The unverified path is described to the
+ * user as "unreviewed" (nobody has reviewed this), so both words work; a user
+ * who types what the warning says must not be told they typed it wrong.
+ */
+export const UNREVIEWED_RISK_FLAG = "i-accept-unreviewed-risk";
 
 /** One catalog row joined with its graded INDEX.md row, when present. */
 export interface InstallCandidate {
@@ -57,10 +88,22 @@ export interface InstallCandidate {
   readonly card: string;
 }
 
-/** Explicit paths so tests can pin fixtures; no global state. */
+/** Everything execution needs, injectable so tests never spawn a process. */
 export interface InstallOptions {
   readonly manifestPath?: string;
   readonly indexPath?: string;
+  /** Overrides the host seam probe; a test double runs here instead. */
+  readonly exec?: ExecSeam;
+  /** Collects streamed progress lines; the host renders them live. */
+  readonly progress?: ProgressFn;
+  /** Scanner entry point, injected so the unreviewed path is testable. */
+  readonly scan?: (dir: string) => Promise<ScanReport>;
+  /** Card reader, injected so evidence tests need no repo checkout. */
+  readonly readCard?: (absolutePath: string) => string;
+  /** Staging directory factory for the unreviewed path. */
+  readonly makeStageDir?: () => string;
+  /** Profile manifest reader, for observing what the install changed. */
+  readonly readManifest?: (path: string) => string;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +328,7 @@ export function consentFor(
   grade: Grade | null,
   args: Readonly<Record<string, string>>,
 ): ConsentDecision {
-  const accepted = args[RISK_FLAG] !== undefined;
+  const accepted = args[RISK_FLAG] !== undefined || args[UNREVIEWED_RISK_FLAG] !== undefined;
   const forced = args["force"] !== undefined;
 
   if (grade !== null && CONSENT_FREE_GRADES.includes(grade)) return { allowed: true };
@@ -296,7 +339,7 @@ export function consentFor(
         grade === null
           ? "this plugin has no dsh-bridge audit; nobody has reviewed it"
           : `grade ${grade} carries findings a user must accept explicitly`,
-      requiredFlag: `--${RISK_FLAG}`,
+      requiredFlag: grade === null ? `--${UNREVIEWED_RISK_FLAG}` : `--${RISK_FLAG}`,
     };
   }
   if (grade === "F" && !forced) {
@@ -394,18 +437,162 @@ export function renderUnverifiedWarning(id: string, source: string, reason: stri
 }
 
 function renderBlocked(head: string, decision: ConsentDecision & { allowed: false }): string {
+  const spellings =
+    decision.requiredFlag === `--${UNREVIEWED_RISK_FLAG}`
+      ? [`Accepted spellings: \`--${UNREVIEWED_RISK_FLAG}\` or \`--${RISK_FLAG}\`.`, ""]
+      : [];
   return [
     head,
-    "Blocked: no install command is emitted.",
+    "Blocked: nothing was installed and no install command is emitted.",
     "",
     `Why: ${decision.reason}.`,
     "",
     "To proceed you must state the risk explicitly on the command line:",
     "",
-    `    /bridge-install <plugin> ${decision.requiredFlag}`,
+    `    /bridge-install <plugin> ${decision.requiredFlag} --yes`,
     "",
+    ...spellings,
     "Recommended first: `/bridge-trust scan <local checkout>` to review the code",
     "before it ever runs.",
+    "",
+  ].join("\n");
+}
+
+/**
+ * The consent gate itself: the user has seen the evidence, and now has to
+ * choose. `--yes` is the only thing that turns this readout into an action,
+ * and it is deliberately not offered as a keypress or a default.
+ */
+function renderConsentGate(profile: string, candidate: { id: string; source: string }, extraFlags: readonly string[]): string {
+  const flags = ["--yes", ...extraFlags].join(" ");
+  return [
+    "CONSENT REQUIRED",
+    "",
+    "Nothing has been installed. dsh-bridge will run exactly this command, and",
+    "nothing else, if you approve it:",
+    "",
+    "```sh",
+    installCommand(profile, candidate.source),
+    "```",
+    "",
+    `Approve by re-running with \`--yes\`:`,
+    "",
+    "```",
+    `/bridge-install ${candidate.id} ${flags}`.replace(/\s+/g, " "),
+    "```",
+    "",
+    `Undo, at any point after: \`${uninstallCommand(profile, candidate.id)}\``,
+    "",
+  ].join("\n");
+}
+
+/** Evidence block: the two worst findings, quoted, with their provenance. */
+function renderEvidence(findings: readonly QuotedFinding[], provenance: Provenance): string {
+  const lines: string[] = ["WORST FINDINGS (quoted verbatim from the audit)", ""];
+  if (findings.length === 0) {
+    lines.push(
+      "The committed card lists no findings section this command can quote. That is",
+      "an absence of quotable text, not an absence of risk; read the full card.",
+      "",
+    );
+  } else {
+    for (const finding of findings) {
+      lines.push(`${finding.text}`, `    - ${finding.citation}`, "");
+    }
+  }
+  lines.push(
+    "PROVENANCE",
+    "",
+    `- audited artifact: ${provenance.pinned || "not stated on the card"}`,
+    `- audit date: ${provenance.audited || "not stated on the card"}`,
+    `- card revision: ${provenance.revision || "not stated on the card"}`,
+    `- source of this grade: \`${provenance.card}\``,
+    "",
+    "The grade covers that one pinned commit. Anything published since is ungraded.",
+    "",
+  );
+  return lines.join("\n");
+}
+
+/** Fresh scanner findings for an unreviewed source, quoted with file:line. */
+function renderScanFindings(report: ScanReport): string {
+  const ranked = [...report.findings].sort(
+    (a, b) => SCAN_SEVERITY_RANK.indexOf(b.severity) - SCAN_SEVERITY_RANK.indexOf(a.severity),
+  );
+  const lines: string[] = [
+    "FRESH LOCAL SCAN (no audit exists, so one was run just now)",
+    "",
+    `- scanner ${report.scannerVersion}, rules ${report.rulesDigest.slice(0, 12)}`,
+    `- ${report.stats.filesScanned} files scanned, machine grade ${report.grading.grade}`,
+    `- counts: critical ${report.grading.counts.critical}, high ${report.grading.counts.high}, medium ${report.grading.counts.medium}, low ${report.grading.counts.low}`,
+    "",
+  ];
+  if (ranked.length === 0) {
+    lines.push(
+      "No findings in the scanned surface. That is not a clean bill of health: it",
+      "means these rules found nothing, over these files, at this moment.",
+      "",
+    );
+  } else {
+    lines.push("Worst findings:", "");
+    for (const finding of ranked.slice(0, 2)) {
+      lines.push(`- [${finding.severity}] ${finding.message}`, `    - ${finding.path}:${finding.line}:${finding.col}`, "");
+    }
+    if (ranked.length > 2) lines.push(`${ranked.length - 2} further findings; run \`/bridge-trust scan\` for all of them.`, "");
+  }
+  lines.push("A machine grade is a signal, not a review. Nobody has read this code.", "");
+  return lines.join("\n");
+}
+
+const SCAN_SEVERITY_RANK = ["info", "low", "medium", "high", "critical"] as const;
+
+/** Render one actionable failure. Every path names what to do next. */
+function renderFailure(head: string, failure: InstallFailure): string {
+  return [
+    head,
+    `FAILED: ${failure.summary}`,
+    "",
+    failure.detail,
+    "",
+    "What to do next:",
+    "",
+    ...failure.nextSteps.map((step) => `- ${step}`),
+    "",
+  ].join("\n");
+}
+
+/** Report what actually changed, read back from disk after a real install. */
+function renderInstalled(
+  head: string,
+  profile: string,
+  candidate: { id: string; source: string },
+  change: InstallChange,
+  progress: readonly string[],
+): string {
+  const deps =
+    change.addedDependencies.length === 0
+      ? ["- profile dependencies: no new row observed (the manifest may be written elsewhere)"]
+      : change.addedDependencies.map((row) => `- profile dependency added: \`${row}\``);
+  return [
+    head,
+    "INSTALLED",
+    "",
+    "Command run:",
+    "",
+    "```sh",
+    change.command,
+    "```",
+    "",
+    ...progress.map((line) => `    ${line}`),
+    "",
+    "What changed:",
+    "",
+    ...deps,
+    `- layer mounted: yes, \`${candidate.id}\` appears in the composed config for profile \`${profile}\``,
+    "- nothing else was written; dsh-bridge changed no approval, sandbox, or model row",
+    "",
+    change.output === "" ? "" : `Installer output:\n\n\`\`\`\n${change.output}\n\`\`\`\n`,
+    `Undo: \`${uninstallCommand(profile, candidate.id)}\``,
     "",
   ].join("\n");
 }
@@ -413,7 +600,7 @@ function renderBlocked(head: string, decision: ConsentDecision & { allowed: fals
 function renderEmit(head: string, profile: string, candidate: { id: string; source: string }): string {
   return [
     head,
-    "Run this to install (dsh-bridge does not execute it for you):",
+    "Run this to install (this host exposes no exec seam, so dsh-bridge cannot run it):",
     "",
     "```sh",
     installCommand(profile, candidate.source),
@@ -470,8 +657,144 @@ function renderReport(candidate: InstallCandidate, ctx: BridgeContext, profile: 
 // ---------------------------------------------------------------------------
 
 /**
- * `/bridge-install` runner. Pure over (ctx, args, options); the only side
- * effects are reads of the two committed catalog files.
+ * Consent, in one place, so no path can install without passing through it.
+ * Two independent conditions must both hold:
+ *   1. the risk ladder (`consentFor`) allows the grade at all;
+ *   2. the user typed `--yes` on this invocation.
+ * `--yes` alone never satisfies (1), and (1) alone never triggers execution.
+ */
+export function mayExecute(grade: Grade | null, args: Readonly<Record<string, string>>): boolean {
+  return consentFor(grade, args).allowed && args["yes"] !== undefined;
+}
+
+/** Flags the user must repeat on the approving re-run, echoed back exactly. */
+function carriedFlags(args: Readonly<Record<string, string>>): readonly string[] {
+  const flags: string[] = [];
+  if (args[RISK_FLAG] !== undefined) flags.push(`--${RISK_FLAG}`);
+  if (args[UNREVIEWED_RISK_FLAG] !== undefined) flags.push(`--${UNREVIEWED_RISK_FLAG}`);
+  if (args["force"] !== undefined) flags.push("--force");
+  return flags;
+}
+
+/**
+ * Perform the approved install and render its outcome. Every exit from here is
+ * either a verified mount or a named, actionable failure; there is no path that
+ * reports success without having read the composed config back.
+ */
+async function performInstall(
+  head: string,
+  profile: string,
+  candidate: { id: string; source: string; grade: Grade | null },
+  ctx: BridgeContext,
+  options: InstallOptions,
+): Promise<CommandResult> {
+  const command = installCommand(profile, candidate.source);
+  const exec = options.exec ?? execSeamOf(ctx);
+  if (exec === null) {
+    // Honest degradation: the gate was passed, but this host cannot run
+    // anything, so the user is handed the exact line rather than a false claim.
+    const failure = noExecSeamFailure(command);
+    return {
+      markdown: renderEmit(head + renderFailure("", failure), profile, candidate),
+      data: { kind: "emitted", grade: candidate.grade, source: candidate.source, command, reason: failure.kind },
+    };
+  }
+
+  const streamed: string[] = [];
+  const progress: ProgressFn = (line) => {
+    streamed.push(line);
+    options.progress?.(line);
+  };
+
+  const outcome = await executeInstall({
+    exec,
+    profile,
+    id: candidate.id,
+    source: candidate.source,
+    command,
+    profilePackageJson: ctx.paths.profilePackageJson,
+    progress,
+    ...(options.readManifest === undefined ? {} : { readManifest: options.readManifest }),
+  });
+
+  if (!outcome.ok) {
+    return {
+      markdown: renderFailure(head, outcome.failure),
+      data: { kind: "failed", failure: outcome.failure.kind, grade: candidate.grade, command, exitCode: 1 },
+    };
+  }
+  return {
+    markdown: renderInstalled(head, profile, candidate, outcome.change, streamed),
+    data: {
+      kind: "installed",
+      grade: candidate.grade,
+      source: candidate.source,
+      command,
+      mounted: true,
+      addedDependencies: outcome.change.addedDependencies,
+    },
+  };
+}
+
+/**
+ * The unreviewed path: fetch the source into a scratch directory and scan it
+ * locally before the user is asked to decide. A grade nobody produced is worth
+ * less than findings produced right now, so this runs even when the answer will
+ * be "blocked": the point is to put evidence in front of the decision.
+ */
+async function scanUnreviewed(
+  source: string,
+  ctx: BridgeContext,
+  options: InstallOptions,
+): Promise<{ readonly body: string; readonly failure?: InstallFailure }> {
+  const exec = options.exec ?? execSeamOf(ctx);
+  if (exec === null) {
+    return {
+      body: [
+        "NO LOCAL SCAN",
+        "",
+        "This host exposes no command-execution seam, so the source could not be",
+        "fetched and scanned. The decision below rests on no evidence at all.",
+        "",
+        "Review it yourself first: clone the source, then `/bridge-trust scan <dir>`.",
+        "",
+      ].join("\n"),
+    };
+  }
+
+  const staged = await stageSource(
+    source,
+    exec,
+    options.progress ?? (() => {}),
+    ...(options.makeStageDir === undefined ? [] : [options.makeStageDir]),
+  );
+  if (!staged.ok) {
+    return { body: renderFailure("", staged.failure), failure: staged.failure };
+  }
+
+  try {
+    const scan = options.scan ?? (async (dir: string) => (await scanDirectory(dir)).report);
+    return { body: renderScanFindings(await scan(staged.staged.dir)) };
+  } catch (error) {
+    const failure: InstallFailure = {
+      kind: "scan-failed",
+      summary: "The local scanner did not produce a verdict, so nothing was installed.",
+      detail: (error as Error).message,
+      nextSteps: [
+        "Run `/bridge-trust scan <dir>` on a local checkout to see the scanner's own error.",
+        "Run `/bridge-doctor` to confirm the scanner is built and reachable.",
+      ],
+    };
+    return { body: renderFailure("", failure), failure };
+  }
+}
+
+/**
+ * `/bridge-install` runner.
+ *
+ * Side effects, all of them gated: catalog and card reads always; a staging
+ * fetch plus a local scan on the unreviewed path; and `dsh plugin add` only
+ * after both halves of consent are satisfied.
  */
 export async function runInstall(
   ctx: BridgeContext,
@@ -489,9 +812,10 @@ export async function runInstall(
         USAGE,
         "",
         "Examples:",
-        "- `/bridge-install modlens` verified entry: trust summary, then the command to run",
+        "- `/bridge-install modlens` grade, worst findings, provenance, then the consent gate",
+        "- `/bridge-install modlens --yes` approve and install, then verify the mount",
         "- `/bridge-install modlens --report` show the trust summary and stop",
-        "- `/bridge-install github:owner/repo` off-catalog source, unverified path",
+        "- `/bridge-install github:owner/repo` off-catalog source: local scan, then the risk gate",
         "",
       ].join("\n"),
     };
@@ -525,43 +849,82 @@ export async function runInstall(
     return { markdown: banner + renderNotFound(query, resolution.nearMisses), data: { kind: "not-found", exitCode: 2 } };
   }
 
-  if (resolution.kind === "unlisted") {
+  // -- Unreviewed sources: scan first, then gate. -----------------------------
+  if (resolution.kind === "unlisted" || (resolution.kind === "match" && resolution.candidate.grade === null)) {
+    const subject =
+      resolution.kind === "unlisted"
+        ? { id: resolution.id, source: resolution.source, grade: null as Grade | null }
+        : { id: resolution.candidate.id, source: resolution.candidate.source, grade: null as Grade | null };
+    const why =
+      resolution.kind === "unlisted"
+        ? "no catalog entry cites this source"
+        : "the entry is in the catalog but has no completed audit";
+
+    if (args["report"] !== undefined && resolution.kind === "match") {
+      return { markdown: banner + renderReport(resolution.candidate, ctx, profile), data: { kind: "report", grade: null } };
+    }
+
+    const scan = await scanUnreviewed(subject.source, ctx, options);
+    const head = [banner + renderUnverifiedWarning(subject.id, subject.source, why), scan.body].join("\n");
+
+    if (scan.failure !== undefined) {
+      // A source we could not read is a source we will not install.
+      return { markdown: head, data: { kind: "failed", failure: scan.failure.kind, grade: null, exitCode: 1 } };
+    }
+
     const decision = consentFor(null, args);
-    const head = banner + renderUnverifiedWarning(resolution.id, resolution.source, "no catalog entry cites this source");
     if (!decision.allowed) {
       return { markdown: renderBlocked(head, decision), data: { kind: "blocked", grade: null, exitCode: 1 } };
     }
-    return {
-      markdown: renderEmit(head, profile, resolution),
-      data: { kind: "emitted", grade: null, source: resolution.source, command: installCommand(profile, resolution.source) },
-    };
+    if (!mayExecute(null, args)) {
+      return {
+        markdown: head + renderConsentGate(profile, subject, carriedFlags(args)),
+        data: { kind: "consent-required", grade: null, source: subject.source, command: installCommand(profile, subject.source) },
+      };
+    }
+    return performInstall(head, profile, subject, ctx, options);
   }
 
+  // -- Graded catalog entries. ------------------------------------------------
   const candidate = resolution.candidate;
   if (args["report"] !== undefined) {
     return { markdown: banner + renderReport(candidate, ctx, profile), data: { kind: "report", grade: candidate.grade } };
   }
 
-  const decision = consentFor(candidate.grade, args);
-  const head =
-    candidate.grade === null
-      ? banner + renderUnverifiedWarning(candidate.id, candidate.source, "the entry is in the catalog but has no completed audit")
-      : banner + renderTrustCard(ctx, candidate, profile);
+  const cardPath = cardFilePath(indexPath, candidate.card);
+  const readCard = options.readCard ?? ((path: string) => readFileSync(path, "utf8"));
+  let evidence = "";
+  if (cardPath !== "") {
+    try {
+      const markdown = readCard(cardPath);
+      evidence = renderEvidence(worstCardFindings(markdown, candidate.card), cardProvenance(markdown, candidate.card));
+    } catch {
+      evidence = "";
+    }
+  }
+  if (evidence === "") {
+    evidence = renderEvidence([], { card: candidate.card || "docs/catalog/INDEX.md", pinned: "", audited: candidate.verifiedAt, revision: "" });
+  }
 
+  const head = [banner + renderTrustCard(ctx, candidate, profile), evidence].join("\n");
+  const decision = consentFor(candidate.grade, args);
   if (!decision.allowed) {
     return {
       markdown: renderBlocked(head, decision),
       data: { kind: "blocked", grade: candidate.grade, rule: resolution.rule, exitCode: 1 },
     };
   }
-  return {
-    markdown: renderEmit(head, profile, candidate),
-    data: {
-      kind: "emitted",
-      grade: candidate.grade,
-      rule: resolution.rule,
-      source: candidate.source,
-      command: installCommand(profile, candidate.source),
-    },
-  };
+  if (!mayExecute(candidate.grade, args)) {
+    return {
+      markdown: head + renderConsentGate(profile, candidate, carriedFlags(args)),
+      data: {
+        kind: "consent-required",
+        grade: candidate.grade,
+        rule: resolution.rule,
+        source: candidate.source,
+        command: installCommand(profile, candidate.source),
+      },
+    };
+  }
+  return performInstall(head, profile, candidate, ctx, options);
 }

@@ -13,6 +13,7 @@
     "index.js",
     "cordis.patch.yml",
     "packages/dsh-bridge/dist",
+    "packages/dsh-bridge/data",
     "tools/scan/dist",
     "docs/catalog/cards"
   ],

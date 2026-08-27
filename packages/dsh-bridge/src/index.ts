@@ -21,6 +21,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 
 import { makeBridgeContext } from "./lib/context.js";
+import { readHostServices, resolveProfile, type AgentLike, type ServiceCarrier } from "./lib/host.js";
 import { bridgeCommandTable, type BridgeCommand } from "./lib/registry.js";
 import { dshHomeDir, homeDir, profilePackageJsonPath, profilePatchPath } from "./lib/paths.js";
 import * as output from "./lib/output.js";
@@ -42,28 +43,49 @@ export const inject = ["commands"];
 
 /** Plugin configuration schema; validated by Cordis via Schemastery. */
 export interface Config {
-  /** Active profile name commands operate on when none is given. */
-  profile: string;
+  /**
+   * Profile name commands operate on. Optional by design: the mount point
+   * already knows which profile it loaded (`ctx.baseUrl`), so the supported
+   * install path needs no configuration. Setting this only overrides the name
+   * used when the mount cannot be read. Defaulting it to `"default"` is what
+   * made /bridge-doctor blame a profile nobody used (journey report 3.2, F5).
+   */
+  profile?: string;
 }
 
 export const Config: Schema<Config> = Schema.object({
-  profile: Schema.string().default("default"),
+  profile: Schema.string(),
 });
 
+/**
+ * Bridge features this composition mounts, reported by /bridge-status S3. The
+ * list is a fact about this build: the command surface below is registered
+ * unconditionally, so naming these is a claim we can keep.
+ */
+const MOUNTED_FEATURES: readonly string[] = Object.freeze([
+  "commands",
+  "connectors flow",
+  "trust layer",
+  "catalog",
+]);
+
 export function apply(ctx: Context, config: Config): void {
+  // Ask the harness which profile this plugin is mounted in before falling
+  // back to configuration (F5). `resolveProfile` returns the provenance too,
+  // so doctor and status can refuse to grade a name nobody chose.
+  const dshHome = dshHomeDir();
+  const profile = resolveProfile(ctx, dshHome, config.profile);
+
   // Single construction point for everything commands may touch. Commands
   // receive this through their runner closure; nothing reaches for singletons.
   const bridgeContext = makeBridgeContext({
-    profile: config.profile,
+    profile: profile.name,
+    profileSource: profile.source,
     paths: {
       home: homeDir(),
-      dshHome: dshHomeDir(),
-      get profilePatch() {
-        return profilePatchPath(config.profile);
-      },
-      get profilePackageJson() {
-        return profilePackageJsonPath(config.profile);
-      },
+      dshHome,
+      profilePatch: profilePatchPath(profile.name, dshHome),
+      profilePackageJson: profilePackageJsonPath(profile.name, dshHome),
     },
     output,
   });
@@ -96,9 +118,27 @@ function registerCommand(ctx: Context, command: BridgeCommand, bridgeContext: Br
   // must not be empty"). A command that takes no argument must omit `input`
   // entirely rather than pass an empty string.
   const hint = command.usage.trim();
-  const handler = async ({ rawInput }: { rawInput: string }): Promise<{ kind: "success" | "error"; text: string }> => {
+  const handler = async ({
+    rawInput,
+    agent,
+  }: {
+    rawInput: string;
+    agent?: AgentLike;
+  }): Promise<{ kind: "success" | "error"; text: string }> => {
     try {
-      const result = await command.run(bridgeContext, parseArgs(rawInput));
+      // Route and token usage are live facts, so they are read per invocation
+      // from the invoking agent and the mounted services rather than cached at
+      // mount time (F6). A composition mounting neither yields an empty object
+      // and every affected row degrades on its own.
+      const host = readHostServices(ctx as unknown as ServiceCarrier, agent, MOUNTED_FEATURES);
+      const invocationContext = makeBridgeContext({
+        profile: bridgeContext.profile,
+        profileSource: bridgeContext.profileSource,
+        paths: bridgeContext.paths,
+        output: bridgeContext.output,
+        host,
+      });
+      const result = await command.run(invocationContext, parseArgs(rawInput));
       return { kind: "success", text: result.markdown };
     } catch (error) {
       return { kind: "error", text: `${command.name}: ${(error as Error).message}` };

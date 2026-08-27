@@ -25,6 +25,12 @@ export function dshHomeDir(home = homeDir()) {
         return resolve(fromEnv);
     return join(home, ".dsh");
 }
+/**
+ * Directory under `$DSH_HOME` holding every profile. Mirrors the harness
+ * constant `PROFILES_DIR` (`@deepseek-ai/dsh-app-boot/lib/types/profile.d.ts:27`)
+ * so profile-name derivation in host.ts anchors on the same layout.
+ */
+export const PROFILES_DIR = "profiles";
 /** Active profile patch file: `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. */
 export function profilePatchPath(profile, dshHome = dshHomeDir()) {
     return join(dshHome, "profiles", profile, "cordis.patch.yml");

@@ -38,6 +38,7 @@ function makeContext(home) {
     const dshHome = join(home, ".dsh");
     return {
         profile: "web",
+        profileSource: "mount",
         paths: {
             home,
             dshHome,

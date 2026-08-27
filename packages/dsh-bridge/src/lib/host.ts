@@ -182,16 +182,16 @@ export function readTokenUsage(
   if (uncachedInputTokens === undefined || outputTokens === undefined) return undefined;
   const pressure = values["contextPressure"] as Record<string, unknown> | undefined;
   const contextWindow = asFiniteNumber(pressure?.["contextWindow"]);
+  const pressureTokens = asFiniteNumber(pressure?.["pressureTokens"]);
+  const cacheReadTokens = asFiniteNumber(usage["cacheReadTokens"]);
+  const cacheWriteTokens = asFiniteNumber(usage["cacheWriteTokens"]);
   return {
     uncachedInputTokens,
     outputTokens,
-    ...(asFiniteNumber(usage["cacheReadTokens"]) === undefined
-      ? {}
-      : { cacheReadTokens: asFiniteNumber(usage["cacheReadTokens"]) as number }),
-    ...(asFiniteNumber(usage["cacheWriteTokens"]) === undefined
-      ? {}
-      : { cacheWriteTokens: asFiniteNumber(usage["cacheWriteTokens"]) as number }),
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
     ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(pressureTokens === undefined ? {} : { pressureTokens }),
   };
 }
 

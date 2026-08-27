@@ -6,8 +6,10 @@
 export function makeBridgeContext(input) {
     return Object.freeze({
         profile: input.profile,
+        profileSource: input.profileSource ?? "config",
         paths: Object.freeze({ ...input.paths }),
         output: input.output,
+        ...(input.host === undefined ? {} : { host: Object.freeze({ ...input.host }) }),
     });
 }
 //# sourceMappingURL=context.js.map

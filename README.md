@@ -31,51 +31,56 @@ dsh-bridge is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 
 ## Install
 
-One command, from a machine with nothing installed:
+From a machine with nothing installed:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs | node -
 ```
 
-Piping a script into an interpreter means trusting what is on the other end. If you would rather read it first, that is the same file:
+That gets you a booted harness with dsh-bridge mounted. It checks Node and pnpm with a concrete fix for each failure, installs the DSH runtime if none is on your PATH, creates an isolated `DSH_HOME` so your real `~/.dsh` is untouched, pre-creates `.credentials.yaml` at mode 600 (the harness refuses to boot otherwise), installs dsh-bridge into the `web` profile, and prints the exact command to boot.
+
+Re-running is safe. Every step checks for its own result first and reports "already done" instead of repeating work, and it never overwrites a file it did not create.
+
+Piping a script into an interpreter means trusting what is on the other end. The same file, read first:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs
-less install.mjs && node install.mjs
+less install.mjs && node install.mjs --dry-run   # prints every command and file write, changes nothing
+node install.mjs
 ```
 
-Add `--dry-run` to print every command and every file write without executing any of them.
+Useful flags: `--ref <commit-sha>` pins the plugin so a later push cannot change what runs, `--profile <name>` picks a different profile, `--no-isolate` uses your real `~/.dsh` instead of a scratch home.
 
-The script checks Node and pnpm, installs the DSH runtime if it is missing, creates an isolated `DSH_HOME` so your real `~/.dsh` is untouched, pre-creates `.credentials.yaml` at mode 600 (the harness refuses to boot otherwise), installs dsh-bridge into the `web` profile, and prints the exact command to boot. Re-running it is safe: every step reports "already done" rather than repeating work, and it never overwrites a file it did not create.
+### What you still have to do yourself
 
-**What it cannot do for you.** DSH ships no model. You supply a provider endpoint and an API key, and the script leaves you at `/bridge-setup` inside the UI, which walks through connecting one.
+DSH ships no model, and the installer connects none. When it finishes you have a harness that boots and a bridge that answers `/bridge-help`, and nothing that answers a prompt. Bring a provider endpoint and an API key, then run `/bridge-setup` in the UI. The full walkthrough, including a working custom OpenAI-compatible provider block, is in [docs/getting-started.md](docs/getting-started.md).
 
-### Requirements
+| Prerequisite | Needed by | Check |
+|---|---|---|
+| Node 22 or newer | The harness runtime | `node --version` |
+| [pnpm](https://pnpm.io) 10 or newer | `dsh plugin`, which manages profile dependencies through it | `pnpm --version` |
+| A provider endpoint and API key | Any prompt you type | you supply it |
 
-| Requirement | Why |
-|---|---|
-| Node 22 or newer | The harness runtime targets it |
-| [pnpm](https://pnpm.io) 10 or newer | `dsh plugin` manages profile dependencies through it |
-| A provider endpoint and API key | Nothing answers until a model route is connected |
+The installer verifies the first two and stops with the command that fixes them. It cannot supply the third.
 
 ### Manual install
 
-If DSH is already set up and you only want the plugin:
+If DSH is already installed, a model route is already connected, and you only want the plugin:
 
 ```bash
 dsh plugin --profile web add github:beartackler/dsh-bridge
 dsh --profile web        # serves http://127.0.0.1:3080
 ```
 
-This assumes DSH is installed, a `DSH_HOME` you are happy to write to, `.credentials.yaml` at mode 600, and a model route already connected. If any of those are not true, use the installer above or the full walkthrough in [docs/getting-started.md](docs/getting-started.md), which includes a working custom OpenAI-compatible provider configuration.
+Both of those conditions matter. Without a connected route the harness boots and nothing answers; without `.credentials.yaml` at mode 600 it refuses to boot at all. [docs/getting-started.md](docs/getting-started.md) covers each step by hand.
 
-The repository ships its compiled `dist/` output, so nothing builds on your machine at install time and dsh asks for no build-script permission. To make sure a later push cannot silently change what runs, pin a commit:
+Pin a commit so a later push cannot silently change what runs:
 
 ```bash
 dsh plugin --profile web add "github:beartackler/dsh-bridge#<commit-sha>"
 ```
 
-The installer takes the same pin as `--ref <commit-sha>`.
+The repository ships its compiled `dist/` output, so nothing builds on your machine at install time and dsh asks for no build-script permission.
 
 Then use `/bridge-help` inside DSH.
 

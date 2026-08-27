@@ -23,8 +23,14 @@ export declare const name = "dsh-bridge";
 export declare const inject: string[];
 /** Plugin configuration schema; validated by Cordis via Schemastery. */
 export interface Config {
-    /** Active profile name commands operate on when none is given. */
-    profile: string;
+    /**
+     * Profile name commands operate on. Optional by design: the mount point
+     * already knows which profile it loaded (`ctx.baseUrl`), so the supported
+     * install path needs no configuration. Setting this only overrides the name
+     * used when the mount cannot be read. Defaulting it to `"default"` is what
+     * made /bridge-doctor blame a profile nobody used (journey report 3.2, F5).
+     */
+    profile?: string;
 }
 export declare const Config: Schema<Config>;
 export declare function apply(ctx: Context, config: Config): void;

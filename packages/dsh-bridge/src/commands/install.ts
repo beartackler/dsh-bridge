@@ -367,9 +367,15 @@ export function uninstallCommand(profile: string, id: string): string {
   return `dsh plugin --profile ${profile} remove ${id}`;
 }
 
+/**
+ * Post-install checklist and undo line (AC-21). Printed on every path that
+ * shows an install command, whether dsh-bridge is about to run it, has just
+ * run it, or is handing it over for the user to run: the verification steps
+ * and the way back out are the same either way.
+ */
 function checklist(profile: string, candidate: { id: string; source: string }): string[] {
   return [
-    "After running it, verify the install actually composed a layer:",
+    "Verification checklist, for once the install has run:",
     "",
     `1. Bundle registered: the package appears in \`dsh.profile.bundles\` of ${profilePackageHint(profile)}.`,
     `2. Layer composed: \`dsh --profile ${profile} --dump-config\` contains a \`# == ${candidate.id}\` marker.`,
@@ -481,8 +487,7 @@ function renderConsentGate(profile: string, candidate: { id: string; source: str
     `/bridge-install ${candidate.id} ${flags}`.replace(/\s+/g, " "),
     "```",
     "",
-    `Undo, at any point after: \`${uninstallCommand(profile, candidate.id)}\``,
-    "",
+    ...checklist(profile, candidate),
   ].join("\n");
 }
 
@@ -592,8 +597,7 @@ function renderInstalled(
     "- nothing else was written; dsh-bridge changed no approval, sandbox, or model row",
     "",
     change.output === "" ? "" : `Installer output:\n\n\`\`\`\n${change.output}\n\`\`\`\n`,
-    `Undo: \`${uninstallCommand(profile, candidate.id)}\``,
-    "",
+    ...checklist(profile, candidate),
   ].join("\n");
 }
 

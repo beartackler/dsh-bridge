@@ -260,22 +260,50 @@ function attestationLines(briefing: Briefing): string[] {
   return [`${parts.join(", ")}. Checked ${briefing.date}.`];
 }
 
+/** The one sentence that keeps a hash mismatch from reading as a verdict. */
+function notAVerdict(): string[] {
+  return [
+    "A changed tree is not a verdict. It means the audited artifact is not what",
+    "is on disk; re-check it to find out what that difference contains.",
+  ];
+}
+
 /** Block 2: the delta against the previous open, including "nothing moved". */
 function deltaLines(briefing: Briefing): string[] {
   if (briefing.counts.tracked === 0) return [];
   const since = briefing.daysSinceLastOpen;
+
+  // A first open has no window to compare against, but silence about a package
+  // that already differs from its audit would be a worse lie than a missing
+  // delta: the attestation above just said "1 changed" and the user is owed the
+  // name. Say there is no baseline, then still name what moved.
   if (since === null) {
-    return ["First briefing on this machine, so there is no previous open to compare against."];
+    const opening = "First briefing on this machine, so there is no previous open to compare against.";
+    if (briefing.changedPkgs.length === 0) return [opening];
+    return [
+      opening,
+      "",
+      "Already different from its recorded audit:",
+      "",
+      ...briefing.changedPkgs.map((pkg) => `- ${pkg}`),
+      "",
+      ...notAVerdict(),
+    ];
   }
+
   const window =
-    since === 0 ? "since earlier today" : since === 1 ? "since yesterday" : `in the last ${since} days`;
+    since === 0 ? "since earlier today" : since === 1 ? "since yesterday" : `in ${since} days`;
 
   if (briefing.newlyChangedPkgs.length === 0) {
-    return briefing.counts.changed === 0
-      ? [`Nothing moved ${window}.`]
+    if (briefing.counts.changed === 0) return [`Nothing moved ${window}.`];
+    return briefing.counts.changed === 1
+      ? [
+          `Nothing new moved ${window}; the 1 already-reported plugin`,
+          "still differs from its recorded audit.",
+        ]
       : [
           `Nothing new moved ${window}; the ${briefing.counts.changed} already-reported`,
-          `${pluralPlugins(briefing.counts.changed)} below still differ from their recorded audit.`,
+          "plugins still differ from their recorded audit.",
         ];
   }
   return [
@@ -283,8 +311,7 @@ function deltaLines(briefing: Briefing): string[] {
     "",
     ...briefing.newlyChangedPkgs.map((pkg) => `- ${pkg}`),
     "",
-    "A changed tree is not a verdict. It means the audited artifact is not what",
-    "is on disk; re-check it to find out what that difference contains.",
+    ...notAVerdict(),
   ];
 }
 

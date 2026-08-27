@@ -7,8 +7,12 @@
  *                         ambiguity, not-found (AC-1..AC-4).
  *   3. Consent gate     - A/B/C pass; unlisted and D need the risk flag; F
  *                         needs --force on top (AC-9, AC-10).
- *   4. Output snapshots - trust card, unverified warning wording, emitted
+ *   4. Output snapshots - trust card, unverified warning wording, the exact
  *                         command, checklist and undo line (AC-5, AC-12, AC-21).
+ *   4b. Consent gate on the action - without `--yes` nothing is executed on any
+ *                         path (the AC-13 invariant); with `--yes` the install
+ *                         runs through an injected seam and the verbatim
+ *                         command, checklist, and undo line are still printed.
  *   5. Degraded catalog - missing manifest fails closed to unlisted (AC-23).
  *   6. House rules      - no emoji anywhere in any rendered output.
  *
@@ -84,6 +88,48 @@ function candidates() {
 }
 async function install(args, profile = "web") {
     return runInstall(makeCtx(profile), args, CATALOG);
+}
+function execDouble() {
+    const commands = [];
+    let mounted = "";
+    return {
+        commands,
+        seam: async (request) => {
+            commands.push(request.command);
+            // A successful `dsh plugin add` is what makes the layer appear, so the
+            // double only reports a mount after one has run. The verify step must be
+            // able to fail; a dump that always answers yes would test nothing.
+            const added = /\badd\s+\S+?([^/\s]+)$/.exec(request.command);
+            if (added)
+                mounted = added[1] ?? "";
+            if (request.command.includes("--dump-config")) {
+                return { code: 0, stdout: mounted === "" ? "" : `# == ${mounted}\nname: ${mounted}\n`, stderr: "" };
+            }
+            return { code: 0, stdout: "added 1 package", stderr: "" };
+        },
+    };
+}
+/** A scan double so the unreviewed path needs neither network nor scanner. */
+async function cleanScan() {
+    return {
+        scannerVersion: "test-0",
+        rulesDigest: "0".repeat(64),
+        stats: { filesScanned: 3 },
+        grading: { grade: "B", counts: { critical: 0, high: 0, medium: 1, low: 0 } },
+        findings: [],
+    };
+}
+/** Run an install with execution wired up, and report what the seam saw. */
+async function installExecuting(args, profile = "web") {
+    const double = execDouble();
+    const result = await runInstall(makeCtx(profile), args, {
+        ...CATALOG,
+        exec: double.seam,
+        scan: cleanScan,
+        makeStageDir: () => tmpdir(),
+        readManifest: () => "{}",
+    });
+    return { ...result, commands: double.commands };
 }
 // ---------------------------------------------------------------------------
 // 1. Catalog parsing
@@ -207,24 +253,85 @@ describe("install output", () => {
         assert.ok(result.markdown.includes("**Verdict:** Egress limited to named vision endpoints."));
         assert.ok(result.markdown.includes("docs/catalog/cards/modlens.md"));
     });
-    it("AC-13: emits the native command verbatim and never claims to have run it", async () => {
-        const result = await install({ _: "ponytail" });
+    it("AC-13: without --yes the command is shown verbatim and nothing is executed", async () => {
         const expected = installCommand("web", "github:acme/ponytail");
         assert.equal(expected, "dsh plugin --profile web add github:acme/ponytail");
-        assert.ok(result.markdown.includes(expected));
-        assert.ok(result.markdown.includes("dsh-bridge does not execute it for you"));
+        // Execution is wired up here on purpose: the guarantee is that the seam is
+        // never reached absent consent, not that there is no seam to reach.
+        const result = await installExecuting({ _: "ponytail" });
+        assert.equal(result.data.kind, "consent-required");
+        assert.deepEqual(result.commands, [], "no consent means no command may reach the exec seam");
+        assert.ok(result.markdown.includes(expected), "the exact line is shown, byte for byte");
+        assert.ok(result.markdown.includes("Nothing has been installed."));
+        assert.ok(!/INSTALLED/.test(result.markdown), "nothing may claim an install happened");
         assert.equal(result.data.command, expected);
+    });
+    it("AC-13 invariant: no path executes anything until --yes is typed", async () => {
+        // Every shape of invocation that stops short of `--yes`, including the ones
+        // that clear the risk ladder. The ladder authorizes; only --yes acts.
+        const withoutConsent = [
+            { _: "ponytail" },
+            { _: "modlens", profile: "lab" },
+            { _: "modlens", report: "" },
+            { _: "riskytool" },
+            { _: "riskytool", "i-accept-unverified-risk": "" },
+            { _: "dsh-hostile", "i-accept-unverified-risk": "", force: "" },
+            { _: "github:wei/dsh-zhipu-router", "i-accept-unreviewed-risk": "" },
+            { _: "pony" },
+            { _: "totally-unrelated-name" },
+            {},
+        ];
+        for (const args of withoutConsent) {
+            const result = await installExecuting(args);
+            const installs = result.commands.filter((c) => c.includes("dsh plugin") && c.includes(" add "));
+            assert.deepEqual(installs, [], `${JSON.stringify(args)} must install nothing`);
+            assert.notEqual(result.data?.kind, "installed");
+        }
+    });
+    it("AC-13: the consented path runs the same command it printed, and says so", async () => {
+        const expected = installCommand("web", "github:acme/ponytail");
+        const result = await installExecuting({ _: "ponytail", yes: "" });
+        assert.equal(result.data.kind, "installed");
+        assert.deepEqual(result.commands, [expected, "dsh --profile web --dump-config"], "exactly the printed install plus the mount verification, nothing else");
+        assert.ok(result.markdown.includes("INSTALLED"));
+        assert.ok(result.markdown.includes(expected), "the command run is still quoted verbatim");
+        assert.equal(result.data.command, expected);
+        assert.equal(result.data.mounted, true, "a mount is observed, never assumed");
+    });
+    it("AC-13: --yes alone never reaches execution on an unreviewed source", async () => {
+        const result = await installExecuting({ _: "github:wei/dsh-zhipu-router", yes: "" });
+        assert.equal(result.data.kind, "blocked");
+        const installs = result.commands.filter((c) => c.includes("dsh plugin"));
+        assert.deepEqual(installs, [], "--yes is inert without the risk flag");
+        assert.ok(result.markdown.includes("Blocked: nothing was installed"));
     });
     it("honors --profile for both the emitted and the undo command", async () => {
         const result = await install({ _: "ponytail", profile: "lab" });
         assert.ok(result.markdown.includes("dsh plugin --profile lab add github:acme/ponytail"));
         assert.ok(result.markdown.includes(uninstallCommand("lab", "ponytail")));
     });
-    it("AC-21: every emitted install prints its post-install checklist and undo line", async () => {
+    it("AC-21: the consent gate carries the checklist and undo line", async () => {
         const result = await install({ _: "modlens" });
+        assert.equal(result.data.kind, "consent-required");
         assert.ok(result.markdown.includes("dsh.profile.bundles"));
         assert.ok(result.markdown.includes("--dump-config"));
         assert.ok(result.markdown.includes("Undo: `dsh plugin --profile web remove modlens`"));
+    });
+    it("AC-21: a completed install carries the same checklist and undo line", async () => {
+        const result = await installExecuting({ _: "ponytail", yes: "" });
+        assert.equal(result.data.kind, "installed");
+        assert.ok(result.markdown.includes("dsh.profile.bundles"));
+        assert.ok(result.markdown.includes("--dump-config"));
+        assert.ok(result.markdown.includes("Undo: `dsh plugin --profile web remove ponytail`"));
+    });
+    it("AC-21: the hand-off path, where no exec seam exists, carries them too", async () => {
+        // Consent was given but the host cannot run anything, so the user is handed
+        // the line. Reversibility must be stated there as well.
+        const result = await install({ _: "modlens", yes: "" });
+        assert.equal(result.data.kind, "emitted");
+        assert.ok(result.markdown.includes("dsh.profile.bundles"));
+        assert.ok(result.markdown.includes("Undo: `dsh plugin --profile web remove modlens`"));
+        assert.ok(result.markdown.includes("cannot install for you"), "no false claim of having run it");
     });
     it("AC-7: --report shows the card and refuses to emit an install command", async () => {
         const result = await install({ _: "modlens", report: "" });
@@ -242,16 +349,25 @@ describe("install output", () => {
     });
     it("blocks an unverified install and names the exact flag, without emitting a command", async () => {
         const result = await install({ _: "github:wei/dsh-zhipu-router" });
-        assert.ok(result.markdown.includes("Blocked: no install command is emitted."));
+        assert.ok(result.markdown.includes("Blocked: nothing was installed and no install command is emitted."));
         assert.ok(result.markdown.includes("--i-accept-unverified-risk"));
         assert.ok(!result.markdown.includes("dsh plugin --profile web add github:wei/dsh-zhipu-router\n```"));
         assert.equal(result.data.kind, "blocked");
     });
-    it("emits the unverified install once the risk flag is present", async () => {
-        const result = await install({ _: "github:wei/dsh-zhipu-router", "i-accept-unverified-risk": "" });
-        assert.equal(result.data.kind, "emitted");
+    it("the risk flag advances an unverified source to the consent gate, not to an install", async () => {
+        const result = await installExecuting({ _: "github:wei/dsh-zhipu-router", "i-accept-unverified-risk": "" });
+        assert.equal(result.data.kind, "consent-required");
         assert.ok(result.markdown.includes("dsh plugin --profile web add github:wei/dsh-zhipu-router"));
         assert.ok(result.markdown.includes("NOT in the dsh-bridge verified catalog"), "the warning stays above the command");
+        const installs = result.commands.filter((c) => c.includes("dsh plugin"));
+        assert.deepEqual(installs, [], "clearing the risk ladder is not consent to act");
+    });
+    it("the risk flag plus --yes installs the unverified source and echoes both flags", async () => {
+        const result = await installExecuting({ _: "github:wei/dsh-zhipu-router", "i-accept-unverified-risk": "", yes: "" });
+        assert.equal(result.data.kind, "installed");
+        assert.ok(result.commands.includes("dsh plugin --profile web add github:wei/dsh-zhipu-router"));
+        assert.ok(result.markdown.includes("NOT in the dsh-bridge verified catalog"), "the warning survives the install");
+        assert.ok(result.markdown.includes("Undo: `dsh plugin --profile web remove dsh-zhipu-router`"));
     });
     it("a catalog entry with no audit takes the unverified path, not a fabricated grade", async () => {
         const result = await install({ _: "dsh-unaudited" });
@@ -259,12 +375,16 @@ describe("install output", () => {
         assert.ok(result.markdown.includes("Blocked:"));
         assert.equal(result.data.grade, null);
     });
-    it("grade F is unreachable without both flags", async () => {
-        const risked = await install({ _: "dsh-hostile", "i-accept-unverified-risk": "" });
+    it("AC-10: grade F is unreachable without both flags, and still needs --yes to act", async () => {
+        const risked = await installExecuting({ _: "dsh-hostile", "i-accept-unverified-risk": "" });
         assert.ok(risked.markdown.includes("--force"));
         assert.equal(risked.data.kind, "blocked");
-        const forced = await install({ _: "dsh-hostile", "i-accept-unverified-risk": "", force: "" });
-        assert.equal(forced.data.kind, "emitted");
+        assert.deepEqual(risked.commands, [], "a blocked grade F executes nothing");
+        // Both risk flags clear the ladder, which buys the consent gate and no more.
+        const forced = await installExecuting({ _: "dsh-hostile", "i-accept-unverified-risk": "", force: "" });
+        assert.equal(forced.data.kind, "consent-required");
+        assert.deepEqual(forced.commands, [], "--force is not --yes");
+        assert.ok(forced.markdown.includes("dsh plugin --profile web add github:bad/dsh-hostile"));
     });
     it("AC-3: ambiguity prints candidates with grades and installs nothing", async () => {
         const result = await install({ _: "pony" });

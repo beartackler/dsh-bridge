@@ -22,7 +22,9 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(SCRIPT_DIR, "..");
 const MANIFEST_PATH = join(ROOT, "docs", "catalog", "manifest.json");
 // Internal working stores per CHARTER.md ("Working Model"): not public docs.
-const INTERNAL_PREFIXES = ["docs/research/", "docs/audits/"];
+const INTERNAL_PREFIXES = ["docs/research/", "docs/audits/", "packages/dsh-bridge/data/"];
+// Generated copies of docs shipped inside the package; links are relative to their source location.
+const GENERATED_PREFIXES = ["packages/dsh-bridge/data/"];
 
 /** @type {{file: string, line: number, msg: string}[]} */
 const errors = [];
@@ -327,7 +329,7 @@ for (const file of mdFiles) {
   const relPath = relative(ROOT, file).split("\\").join("/");
   const lines = readFileSync(file, "utf8").split(/\r?\n/);
   const inFence = analyzeFences(file, lines);
-  checkLinks(file, lines, inFence);
+  if (!GENERATED_PREFIXES.some((p) => relPath.startsWith(p))) checkLinks(file, lines, inFence);
   checkPlaceholders(file, relPath, lines, inFence);
 }
 checkManifest();

@@ -290,7 +290,8 @@ describe("renderDaily on a quiet day", () => {
   });
 
   it("never mentions an alarm or a grade when nothing is wrong", () => {
-    assert.doesNotMatch(markdown, /changed/i.test("x") ? /\bchanged since your last\b/ : /$^/);
+    assert.doesNotMatch(markdown, /\bchanged since your last\b/);
+    assert.doesNotMatch(markdown, /not reported before/);
     assert.doesNotMatch(markdown, /\bgrade\b/i, "drift output must never read as a grade");
   });
 
@@ -370,7 +371,34 @@ describe("renderDaily honesty paths", () => {
       ),
     );
     assert.match(markdown, /Nothing new moved in 2 days/);
-    assert.match(markdown, /still differ from their recorded audit/);
+    assert.match(markdown, /the 1 already-reported plugin\nstill differs from its recorded audit\./);
+    assert.doesNotMatch(markdown, /not reported before/, "a known drift is not a new one");
+  });
+
+  it("agrees in number when several plugins are still drifted", () => {
+    const markdown = renderDaily(
+      buildBriefing(
+        [entry("@x/known", "changed", "2026-08-01"), entry("@x/other", "changed", "2026-08-01")],
+        {
+          version: 1,
+          lastOpenedOn: "2026-08-24",
+          changedPkgs: ["@x/known", "@x/other"],
+          trackedCount: 2,
+        },
+        "2026-08-26",
+      ),
+    );
+    assert.match(markdown, /the 2 already-reported\nplugins still differ from their recorded audit\./);
+  });
+
+  it("names an already-drifted package on a first open instead of hiding it", () => {
+    const markdown = renderDaily(
+      buildBriefing([entry("@x/moved", "changed", "2026-08-01")], EMPTY_DAILY_STATE, "2026-08-26"),
+    );
+    assert.match(markdown, /First briefing on this machine/);
+    assert.match(markdown, /Already different from its recorded audit:/);
+    assert.match(markdown, /- @x\/moved/);
+    assert.match(markdown, /not a verdict/);
   });
 });
 

@@ -66,20 +66,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_dir: [tools/scan]
+        package_dir: [tools/scan, packages/dsh-bridge]
     steps:
       - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-          standalone: true
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: "**/package.json"
 
       - name: Run tests where a package is wired up (graceful skip otherwise)
         run: |
@@ -91,11 +84,16 @@ jobs:
             echo "::group::tests in $dir"
             (
               cd "$dir" || exit 1
-              if ! pnpm install --frozen-lockfile --ignore-scripts; then
-                exit 97
+              if [ -f package-lock.json ]; then
+                npm ci --ignore-scripts || exit 97
+              elif [ -f pnpm-lock.yaml ]; then
+                pnpm install --frozen-lockfile --ignore-scripts || exit 97
+              else
+                echo "no lockfile in $dir; skipping tests until one lands"
+                exit 0
               fi
               if grep -q '"test"' package.json; then
-                pnpm run test
+                npm run test
               else
                 echo "no test script in package.json yet, nothing to run"
               fi

@@ -30,8 +30,8 @@ credential-shaped fixtures) the scanner cannot separate from the product.
 | Capability | Detail | Evidence |
 |---|---|---|
 | Registration | Each bundle inserts one Cordis entry mapping to its npm package (`deepseek-idesign`, and the ippt/ivideo twins); no other services injected. | external-plugins/deepseek-harness/design-studio/cordis.patch.yml:1-4 |
-| Filesystem access | Reads/writes only inside the workspace's prefixed studio folder. Path handling normalizes separators, rejects absolute paths/NUL/traversal segments, enforces a prefix root, resolves realpath, and re-checks containment after resolution before any write. Writes use conflict detection ("changed since loaded") with atomic rename. | studio-host/src/http.ts:45-90 (safeRelativePath/safeAssetPath/inside), :92-110+ (verifiedExistingPath/verifiedWritePath); design-studio/src/index.ts:52-56 (conflict check constant) |
-| Route authorization | Every mutating/studio route requires a per-session token header (`x-ipollowork-design-token` for design; equivalents for ppt/video) compared against a `randomBytes` token minted at activation; mismatch is a hard 403. The published bundle carries the same check at lib/index.js:3612. | studio-host/src/http.ts:35-43; design-studio/src/index.ts:53, 72; package/lib/index.js:3612 (tarball spot-check) |
+| Filesystem access | Reads/writes only inside the workspace's prefixed studio folder. Path handling normalizes separators, rejects absolute paths/NUL/traversal segments, enforces a prefix root, resolves realpath, and re-checks containment after resolution before any write. Writes use conflict detection ("changed since loaded") with atomic rename. | studio-host/src/http.ts:45-90 (safeRelativePath/safeAssetPath/inside), :92-110+ (verifiedExistingPath/verifiedWritePath); external-plugins/deepseek-harness/design-studio/src/index.ts:52-56 (conflict check constant) |
+| Route authorization | Every mutating/studio route requires a per-session token header (`x-ipollowork-design-token` for design; equivalents for ppt/video) compared against a `randomBytes` token minted at activation; mismatch is a hard 403. The published bundle carries the same check. | studio-host/src/http.ts:35-43; external-plugins/deepseek-harness/design-studio/src/index.ts:53, 72; `deepseek-idesign@0.2.2` npm tarball, package/lib/index.js:3612 (obtained via `npm pack deepseek-idesign@0.2.2`; tarball not retained - see §5) |
 | Network egress (design/ppt) | None. Neither design-studio nor ppt-studio source contains fetch/http/client calls; their outbound surface is zero by construction. | grep negative across external-plugins/deepseek-harness/{design,ppt}-studio/src |
 | Network egress (video) | Spawns the vendored hyperframes CLI as a child process per render/preview request; inherits environment including PATH. This executes the project's own renderer, which is the documented product of video generation. | video-studio/src/runtime.ts:1, 78, 156, 332-356 |
 | Child processes | Only the video bundle spawns: fixed `process.execPath` running its own cli.js path, never a shell string. | runtime.ts:332-340 |
@@ -64,8 +64,8 @@ graded bundles contribute a handful of findings total.
 | EXEC high (490) | Dominated by test runners, packaging scripts, i18n placeholder strings mentioning `npx`, and the orchestrator binary loader. None in the graded bundles. | scan breakdown by directory |
 | HOOK high / `install-hook-shell` gate (apps/orchestrator/scripts/postinstall.mjs) | Real and named: installing the orchestrator CLI package runs a postinstall that, when the platform-specific optional dependency is absent, downloads a fallback binary from `github.com/Devin-AXIS/iPolloWork/releases` and chmods it executable. URL derives from the package's own pinned version; still an install-time network fetch plus executable drop on a sibling package. | apps/orchestrator/scripts/postinstall.mjs:60-77, 100-118 |
 | OBFU high `nЛюди/nНо/nЧто` (apps/app/src/i18n/locales/ru.ts:91) | Russian locale strings misread as entropy. Dismissed. | ru.ts:91 |
-| OBFU medium cluster (decodeURIComponent/base64/atob) | URL decoding and data-URL image handling across app/vendor UIs; one real minified vendor file exists (`three.min.js`) but it is bundled, not dynamically fetched or decoded-then-executed. `concealed-egress` gate dismissed for the graded bundles. | scan output; apps/server/bundled-templates/.../three.min.js:6 |
-| `dynamic-exec-present` gate | Published design bundle contains exactly one `new Function("")` - a capability probe inside a shared error/eval-support helper that executes an empty program and discards the result. No dynamic execution of data. Verified against the tarball, not just source. | package/lib/index.js:137 (tarball) |
+| OBFU medium cluster (decodeURIComponent/base64/atob) | URL decoding and data-URL image handling across app/vendor UIs; one real minified vendor file exists (`three.min.js`) but it is bundled, not dynamically fetched or decoded-then-executed. `concealed-egress` gate dismissed for the graded bundles. | scan output; apps/server/bundled-templates/ipollowork.hyperframes.app-device-launch/assets/three.min.js:6 |
+| `dynamic-exec-present` gate | Published design bundle contains exactly one `new Function("")` - a capability probe inside a shared error/eval-support helper that executes an empty program and discards the result. No dynamic execution of data. Verified against the tarball, not just source. | `deepseek-idesign@0.2.2` npm tarball, package/lib/index.js:137 (tarball not retained - see §5) |
 | `cred-plus-net` gate | In the graded bundles: no CRED findings exist at all, so the pairing cannot fire there. Monorepo-wide it fires off test fixtures. Dismissed for this subject. | section 3 rows |
 
 ### Source-to-artifact comparison
@@ -86,6 +86,10 @@ studio-host/src/http.ts:72 semantics).
   ships inside the video pipeline's blast radius.
 - **Orchestrator platform packages**: the optionalDependency binaries pulled from npm releases were
   not audited.
+- **Published-tarball citations are not re-resolvable from disk.** The two `package/lib/index.js`
+  claims (lines 137 and 3612) were read inside the `deepseek-idesign@0.2.2` tarball fetched with
+  `npm pack`; that tarball was not retained next to the pinned clone. Reproduce them with step 4 of
+  §7. A republished 0.2.2 would not be detected by this card.
 
 ## 6. Reviewer disagreement
 
@@ -145,14 +149,16 @@ sed -n '144p'   .github/workflows/ci-dsh-design-studio.yml                  # --
    realpath resolution followed by a *second* containment check after symlinks resolve
    (studio-host/src/http.ts:64-90).
 2. Per-session random tokens gate every route, minted from `node:crypto` at activation, and the check
-   demonstrably survives into the published bundle (design-studio/src/index.ts:53;
-   package/lib/index.js:3612).
+   demonstrably survives into the published bundle
+   (external-plugins/deepseek-harness/design-studio/src/index.ts:53; `deepseek-idesign@0.2.2`
+   tarball, package/lib/index.js:3612).
 3. Design and PPT bundles achieve zero network surface by construction - the strongest possible
    posture for view-rendering plugins.
 4. Publish hygiene is exemplary for the ecosystem: tag-gated, version-equality asserted in workflow,
    provenance-attested via id-token (ci-dsh-design-studio.yml:88-96, 144).
 5. Write paths detect concurrent modification and refuse to clobber ("The design changed since it was
-   loaded"), with bounded sizes throughout (design-studio/src/index.ts:54-56).
+   loaded"), with bounded sizes throughout
+   (external-plugins/deepseek-harness/design-studio/src/index.ts:54-56).
 6. External plugins are deliberately excluded from the root workspace with a written rationale, so
    building the app never silently builds or installs them (external-plugins/README.md).
 

@@ -71,20 +71,33 @@ function registerCommand(ctx, command, bridgeContext) {
     // must not be empty"). A command that takes no argument must omit `input`
     // entirely rather than pass an empty string.
     const hint = command.usage.trim();
+    const handler = async ({ rawInput }) => {
+        try {
+            const result = await command.run(bridgeContext, parseArgs(rawInput));
+            return { kind: "success", text: result.markdown };
+        }
+        catch (error) {
+            return { kind: "error", text: `${command.name}: ${error.message}` };
+        }
+    };
     ctx.commands.register({
         name: command.name,
         description: command.summary,
         ...(hint === "" ? {} : { input: { hint } }),
-        handler: async ({ rawInput }) => {
-            try {
-                const result = await command.run(bridgeContext, parseArgs(rawInput));
-                return { kind: "success", text: result.markdown };
-            }
-            catch (error) {
-                return { kind: "error", text: `${command.name}: ${error.message}` };
-            }
-        },
+        handler,
     });
+    // Aliases share the same handler and description; registered as distinct
+    // command names so they resolve identically at the parser (help spec edge
+    // case 1's "never register both spellings blindly" is satisfied because
+    // each alias name is registered exactly once here, never duplicated).
+    for (const alias of command.aliases) {
+        ctx.commands.register({
+            name: alias,
+            description: command.summary,
+            ...(hint === "" ? {} : { input: { hint } }),
+            handler,
+        });
+    }
 }
 /**
  * Minimal `--flag value` splitter with positional capture.

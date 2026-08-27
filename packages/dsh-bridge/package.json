@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "test": "npm run build && node --test dist/test/self-test.js dist/test/trust-test.js dist/test/drift-test.js dist/test/connect-test.js dist/test/connect-apply-test.js dist/test/memory-test.js dist/test/compact-test.js dist/test/resume-test.js dist/test/status-test.js dist/test/model-test.js dist/test/mcp-test.js dist/test/init-test.js dist/test/suggest-test.js dist/test/review-test.js"
+    "test": "npm run build && node --test \"dist/test/**/*-test.js\" dist/test/self-test.js"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

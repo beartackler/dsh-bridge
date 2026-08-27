@@ -23,7 +23,7 @@ import type { BridgeContext, CommandResult } from "../lib/types.js";
  * registered command can never silently vanish from the listing.
  */
 const GROUPS: readonly (readonly [title: string, names: ReadonlySet<string>])[] = [
-  ["Setup", new Set(["init", "login", "connect", "model", "memory", "mcp", "help"])],
+  ["Setup", new Set(["setup", "init", "login", "connect", "model", "memory", "mcp", "help"])],
   ["Catalog", new Set(["browse", "install", "suggest", "trust"])],
   ["Session", new Set(["compact", "resume"])],
   ["Code", new Set(["review", "improve", "refactor"])],
@@ -83,7 +83,11 @@ export async function renderHelp(
 
   // H2 for the page title, H3 for each group: one level of nesting, so the
   // section rule in every command body stays "### is a section, ## is a page".
-  const blocks: string[] = ["## dsh-bridge commands", "Usage: /bridge-help [command]"];
+  const blocks: string[] = [
+    "## dsh-bridge commands",
+    "New here? Run /bridge-setup for guided onboarding.",
+    "Usage: /bridge-help [command]",
+  ];
 
   const grouped = new Set<BridgeCommand>();
   for (const [title, names] of GROUPS) {

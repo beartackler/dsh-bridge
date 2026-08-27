@@ -255,7 +255,8 @@ describe("runImprove", () => {
     });
     it("turns a user error into a message, not a throw", async () => {
         const result = (await runImprove(ctx, {}, memoryDeps({})));
-        assert.equal(result.markdown, "/improve needs a path or --diff.");
+        assert.match(result.markdown, /\/improve needs a path or --diff\./);
+        assert.match(result.markdown, /Usage: \/bridge-improve/);
     });
     it("never runs git except for read-only name-only diffs", async () => {
         const calls = [];

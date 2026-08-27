@@ -1,5 +1,7 @@
 # Trust Report Card: cherry-studio
 
+## 1. Header
+
 | | |
 |---|---|
 | **Grade** | **C** — use with awareness |
@@ -11,11 +13,11 @@
 
 A grade is evidence-backed opinion over the pinned artifacts above. It is not a safety guarantee and says nothing about any other commit or version.
 
-## Verdict in one sentence
+## 2. Verdict in one sentence
 
 The DSH bridge itself is careful engineering (token-authenticated loopback socket, fail-closed policy engine), but the app ships one opaque obfuscated vendor bundle in its SSO login flow that cannot be audited from source, plus opt-out analytics and an unpinned global-install postinstall in dev tooling, which caps it at C.
 
-## What this plugin can do (capability surface)
+## 3. What this plugin can do (capability surface)
 
 This repository is Cherry Studio, a popular Electron AI chat client (51k stars). Its DeepSeek Harness support is a control-plane plugin that embeds a full DSH runtime inside the app:
 
@@ -27,14 +29,16 @@ This repository is Cherry Studio, a popular Electron AI chat client (51k stars).
 | Dynamic code execution | Build-time only | 73 prod EXEC hits are array-argv spawns in packaging scripts and RegExp `.exec` detector matches. No eval/new Function found in runtime paths reviewed. |
 | Child processes | Yes — spawns the DSH runtime | `src/main/ai/runtime/dsh/compositionBuilder.ts` composes ~40 pinned `@deepseek-ai/*` rc packages into a child agent process; `DshBridgeServer.ts` hosts the control plane. |
 | IPC/socket surface | Loopback Unix domain socket, token-gated | Per-session socket in tmpdir with random UUID name (`DshBridgeServer.ts:49-52`, Windows named pipe), 0600 chmod (`:87-88`), 256-bit auth token via `randomBytes(32)` (`:58`), constant-time comparison with length check (`:230`), fail-closed on disconnect (`packages/dsh-bridge/src/link.ts:32-37`). Token is consumed then deleted from env (`plugin.ts:58`). |
-| Tool-call policy | Local enforcement engine | `packages/dsh-bridge/src/policy.ts:24-60`: deny-list → plan-mode read-only allowlist with workspace-root containment → approval gates → bypass handling; delegated calls re-checked (`decideDelegatedToolCall`); global-install command detection (`detectGlobalInstall`, policy.ts:239). Dependency-free by design so it runs inside the dsh subprocess unmodified. |
+| Tool-call policy | Local enforcement engine | `packages/dsh-bridge/src/policy.ts:24-60`: deny-list -> plan-mode read-only allowlist with workspace-root containment -> approval gates -> bypass handling; delegated calls re-checked (`decideDelegatedToolCall`); global-install command detection (`detectGlobalInstall`, policy.ts:239). Dependency-free by design so it runs inside the dsh subprocess unmodified. |
 | npm lifecycle hooks | Dev-machine only, one global install risk | Root `package.json:84` `prepare` runs `prek install` unless CI (dev checkout hook installer); `:85` `postinstall` builds the local dsh-bridge workspace package via pnpm filter (local build, nothing fetched). `scripts/win-sign.js` referenced by scan does Windows signing in release CI. No hooks ship to end users through the Electron installers. |
-| Timers / beacons | Analytics exist, opt-out | PRIVACY.md (updated 2026-08-20): anonymized version checks and usage aggregates collected by default under Settings → Data Settings → Privacy toggles; explicit commitment against collecting conversation content, API keys, or identity. |
+| Timers / beacons | Analytics exist, opt-out | PRIVACY.md (updated 2026-08-20): anonymized version checks and usage aggregates collected by default under Settings -> Data Settings -> Privacy toggles; explicit commitment against collecting conversation content, API keys, or identity. |
 | Services registered | Full DSH composition | The bridge registers session/command/policy handlers over JSON-RPC (`plugin.ts:66-118`); approvals round-trip to Cherry UI; subagent lifecycle events stream back. |
 
 Distribution channel note: Cherry Studio ships as signed Electron installers via GitHub releases (21 assets for v2.0.9), not npm; `@cherrystudio/dsh-bridge` is a private workspace package ("private": true in its package.json) consumed in-app, so there is no public tarball to diff — correspondence rests on building from the pinned commit.
 
-## Findings
+## 4. Evidence
+
+### Findings
 
 Raw scan output retained at `reference/audits/scan-cherry-studio.json`. Mechanical result: grade F, 11,448 findings (24 critical, 10,909 high, 133 medium, 382 low) over 7,361 files; gates include `cred-plus-net`, `dynamic-exec-present`, `finding-density`, `install-hook-shell`. Adjudication:
 
@@ -49,7 +53,7 @@ Raw scan output retained at `reference/audits/scan-cherry-studio.json`. Mechanic
 
 Credential+egress compounding: not demonstrated. The strongest near-miss is the obfuscated SSO bundle touching OAuth tokens, but no exfil destination beyond Nutstore's own service was identified.
 
-## Strengths
+### Strengths
 
 - The DSH bridge security design is exemplary for this ecosystem: per-session sockets, 0600 permissions, 256-bit tokens compared in constant time, token scrubbed from the environment after handshake, fail-closed transports (`DshBridgeServer.ts:49-58,87-88,230`; `link.ts:32-37`).
 - Tool policy is a pure, dependency-free decision function with plan-mode containment and explicit bypass rules, ported from and tested against the app's own approval engine (`policy.ts:24-60`).
@@ -57,17 +61,47 @@ Credential+egress compounding: not demonstrated. The strongest near-miss is the 
 - PRIVACY.md is specific and current, naming both collection classes, their opt-outs, and hard commitments about keys and conversations.
 - Defensive coding shows up where scanners look: sensitive-file guards in MCP servers and trash protection rather than credential access.
 
-## Residual risks
+### Residual risks (accepted by this grade)
 
 1. The obfuscated Nutstore SSO bundle is unauditable from source. If its upstream ever turns hostile or is swapped, nothing in this review would catch it. Users who do not use Nutstore sync never need it, but it ships regardless.
 2. Opt-out analytics: default-on until toggled, per the privacy policy.
 3. First-party relay endpoints (`open.cherryin.net`, `open.cherryin.ai`, built-in model services) mean some deployments route inference traffic through Cherry's infrastructure; the privacy policy discloses the transient-relay carve-out but users should understand it.
 4. The bridge grants the embedded DSH runtime broad local power (shell tools via sandboxed entries, filesystem within workspace roots); safety depends on Cherry's policy engine staying correct, and bypassPermissions mode lifts ordinary approval gates by design.
-5. Electron auto-update (`electron-updater` 6.7.0 in dependencies) was not signature-audited in this pass.
-6. No public npm artifact for the DSH integration exists to hash-check; verification requires building from source at the pinned commit.
-7. Static + manual methodology only; probe (S4) and dual adversarial review (S5) pending. A full pipeline run could lower, not raise, this grade.
+5. Electron auto-update (`electron-updater` 6.7.0 in dependencies) ships in the product; this pass did
+   not audit its signature path (see section 5).
 
-## Verify this yourself
+## 5. What we could not check
+
+This section is mandatory and is never empty. What follows is outside the evidence above, not
+adjudicated as safe.
+
+- **The obfuscated Nutstore SSO bundle's actual behavior.** `src/main/services/nutstore/sso/lib/index.mjs`
+  was identified, attributed to its sole importer, and its inputs characterized, but its logic was not
+  recovered. No upstream source matching it could be located, so "what it does with an OAuth token"
+  rests on the surrounding TypeScript, not on the bundle itself.
+- **Electron auto-update signature verification.** `electron-updater` 6.7.0 is a dependency; the
+  update-feed configuration, signing keys, and the verification path before install were not read.
+- **Artifact-to-source correspondence.** `@cherrystudio/dsh-bridge` is a private workspace package and
+  the app ships as GitHub-release Electron installers, so there is no public tarball to hash against
+  the pinned commit. Nothing here was verified against a downloaded release binary; correspondence
+  rests on building from source.
+- **Behavioral probe (S4).** No sandboxed load-and-run. Every runtime claim - socket permissions,
+  token scrubbing, policy decisions - was established by reading, not by observing.
+- **Cross-model adversarial review (S5).** Single reviewer, no second model concurred.
+- **The NET bulk.** ~4,800 network findings were sampled by category (provider catalogs, i18n, docs
+  URLs), not enumerated one by one. A single covert destination hidden in that volume would not
+  necessarily have surfaced.
+- **The analytics payload on the wire.** Default-on collection is described from PRIVACY.md and the
+  settings toggles; no traffic capture confirmed what is actually sent or that the toggles stop it.
+
+## 6. Reviewer disagreement
+
+Single-reviewer pass; no second adversarial model. Machine grade F versus adjudicated C. The gap is
+accounted for above: 5,693 of the findings are one obfuscated vendor file (kept, and the reason this
+card stops at C), the CRED and NET criticals are guard code and SSRF test fixtures, and the EXEC and
+HOOK remainder is build tooling that never reaches an end user.
+
+## 7. Verify this yourself
 
 ```bash
 # Pin and inspect the same artifacts
@@ -94,7 +128,7 @@ sed -n '85,99p' src/main/services/codeCli/CodeCliService.ts
 node tools/scan/dist/index.js <path-to-cherry-studio> --json /tmp/cherry-scan.json
 ```
 
-## Methodology and pinned inputs
+## 8. Methodology and pinned inputs
 
 - Charter: `CHARTER.md`; pipeline reference: `docs/trust/pipeline-architecture.md`.
 - Scanner: dsh-bridge tools/scan 0.1.0, digest `9cc04224...baaee999`, run once over the shallow clone at `reference/audits/cherry-studio`.
@@ -102,8 +136,15 @@ node tools/scan/dist/index.js <path-to-cherry-studio> --json /tmp/cherry-scan.js
 - Cross-model adversarial review: NOT performed (single reviewer). Card revision 1 capped accordingly.
 - Raw scan JSON retained next to the clone under `reference/audits/`.
 
-## Revision history
+## 9. Revision history
 
 | Rev | Date | Subject | Grade | Change |
 |---|---|---|---|---|
 | 1 | 2026-08-26 | git `491a9fb` (v2.0.9 line) | C | Initial card. Static + manual methodology; probe/review/signing pending pipeline availability. |
+
+Re-verify triggers: any change to `src/main/services/nutstore/sso/lib/index.mjs`, or the appearance of
+a buildable upstream source for it (which would lift the OBFU-001 cap); any weakening of the bridge
+socket hardening at `DshBridgeServer.ts:49-58, 87-88, 230`; any change to the deny-list or plan-mode
+containment in `packages/dsh-bridge/src/policy.ts`; a switch of analytics from opt-out to on-by-
+default-without-toggle, or any PRIVACY.md revision; publication of `@cherrystudio/dsh-bridge` as a
+public package (which would make artifact diffing possible); or 90 days elapsed.

@@ -12,19 +12,36 @@
 | Repo age / activity | 4.1k stars (discovery snapshot 2026-08-19); active, pushed within last 25 days |
 | Audit method | dsh-bridge static scanner v0.1.0 (rulesDigest `9cc04224...`) + manual adversarial review of all critical and sampled high findings. No behavioral probe (S4), no dual-model pass (S5). |
 | Verified at | 2026-08-26T09:10Z |
-| Revision | 1 |
+| Revision | 2 |
 
 ## Verdict in one sentence
 
-Use with awareness: nothing hostile was found in the engine adapters or process boundaries, but this desktop client ships non-opt-in Baidu web analytics into its production main window, auto-checks a GitHub update feed on every startup with one-click install, binds an optional remote-control web service on all interfaces, and reads/writes the Claude and Codex credential files it manages - capabilities that go far beyond a plugin's threat model.
+Do not install unless you accept the named risk: nothing hostile was found in the engine adapters or process boundaries, but this desktop client ships non-opt-in Baidu web analytics into its production main window with no toggle and no user-facing disclosure anywhere, auto-checks a GitHub update feed on every startup with one-click install, binds an optional remote-control web service on all interfaces, and reads/writes the Claude and Codex credential files it manages - capabilities that go far beyond a plugin's threat model.
 
 ## Grades
 
-### Overall: C
+### Overall: D
+
+The headline reason is the analytics stack, and it is a band match rather than a judgment call. The
+D band opens with "undocumented egress". `installBaiduTongji()` runs unconditionally in the
+production main window (services/baiduTongji.ts:9,126; scheduled at bootstrapApp.tsx:349-366), loads
+`https://hm.baidu.com/hm.js?<site-id>`, and sends PV/UV beacons plus a persisted `HMACCOUNT` visitor
+cookie and the User-Agent to a third party. There is no toggle, and a grep of README.md,
+README.zh-CN.md, docs/, and the settings surface returns zero user-facing disclosure - the only
+mention anywhere is developer-facing (dev-guidelines/frontend/index.md:38,57). Undisclosed
+third-party analytics with no opt-out is undocumented egress by the plain reading of the band, and
+the dsh-bridge charter's PRIV bar ("no telemetry without opt-in") treats it as a release blocker
+rather than an awareness note.
+
+The rest of the card supports the lower grade rather than resisting it: an update feed contacted on
+every launch, a daemon that binds `0.0.0.0` when enabled, credential-file management for two other
+harnesses, and a CSP that permits `unsafe-eval`. None of these is hidden, and the transport
+hardening around the analytics loader is genuine, but hardening the delivery of an undisclosed
+beacon does not make the beacon disclosed.
 
 Ceilings applied:
 
-1. Full-pipeline ceiling C (docs/trust/pipeline-architecture.md, S6): no behavioral probe, no cross-model review. Nothing found here rises to D under the grading bands (no undocumented exfil path, no obfuscated execution), but several product-level behaviors sit exactly on the "real capabilities a careful user should know about" line.
+1. Full-pipeline ceiling C (docs/trust/pipeline-architecture.md, S6): no behavioral probe, no cross-model review. That ceiling caps the grade at C; the analytics finding then lowers it to D on its own merits.
 2. The mechanical scanner grade is F (10 critical / 1599 high / 90 medium / 1531 low across 4955 files, 3230 findings). Section Evidence adjudicates these counts; all ten criticals are defensive guards or test fixtures, and the high volume is dominated by i18n strings mentioning `.claude`/`.codex` directories plus lockfile URL noise.
 
 ### Per-surface grades
@@ -32,7 +49,7 @@ Ceilings applied:
 | Surface | Grade | Basis |
 |---|---|---|
 | Engine adapters incl. DSH (`src-tauri/src/engine/dsh/`) | B | DSH host client POSTs only `{origin}/api/*` where origin is the user-configured host:port defaulting to `127.0.0.1:3080` (engine/dsh/mod.rs:56-68); supervisor probes then spawns the local `dsh web --host --port` binary as a direct child with argv construction, no shell (engine/dsh/supervisor.rs:146-186); "kill only spawned" policy documented at supervisor.rs:1. Credentials stay in DSH by design (README.md:17). |
-| Baidu analytics (`baidu_tongji.rs`, `services/baiduTongji.ts`) | C | Production main window loads `https://hm.baidu.com/hm.js?<site-id>` via Rust reqwest and evals it into the webview, then beacons PV/UV (baidu_tongji.rs:383-421, services/baiduTongji.ts:139-152). Transport hardening is real - https-only client, no redirects, fixed URL, marker+site-id validation before eval, bounded sizes, cookie quarantine (baidu_tongji.rs:235-241,358-366,423-430) - but there is NO opt-out toggle and no user-facing disclosure; see Evidence. |
+| Baidu analytics (`baidu_tongji.rs`, `services/baiduTongji.ts`) | D | Production main window loads `https://hm.baidu.com/hm.js?<site-id>` via Rust reqwest and evals it into the webview, then beacons PV/UV (baidu_tongji.rs:383-421, services/baiduTongji.ts:139-152). Transport hardening is real - https-only client, no redirects, fixed URL, marker+site-id validation before eval, bounded sizes, cookie quarantine (baidu_tongji.rs:235-241,358-366,423-430) - but there is NO opt-out toggle and no user-facing disclosure; see Evidence. This surface sets the overall grade. |
 | Auto-updater (`features/update/`) | C | Startup gate triggers a silent `check()` against `https://github.com/.../releases/latest/download/latest.json` on every production launch (useUpdater.ts:43,74,320-328; tauri.conf.json plugins.updater.endpoints). Download/install requires clicking the update toast (`startUpdate` wired to UI button, useUpdater.ts:245-300), signatures enforced via Tauri updater pubkey (tauri.conf.json:69-73). Check traffic itself is automatic. |
 | Remote/web service daemon (`bin/cc_gui_daemon/web_service_runtime.rs`) | C | Optional service binds `0.0.0.0:<port>` (web_service_runtime.rs:118-123) with bearer-token auth middleware on routes (lines 248,259,626,670) and a random UUID token when none is supplied (line 1347-1349); LAN address is advertised for convenience (build_access_addresses). Token-in-query support widens exposure; opt-in feature, but network-reachable control of coding sessions if enabled carelessly. |
 | Vendor/profile managers (`vendors/commands.rs`) | B | Reads/writes Claude `settings.json`, Codex `config.toml`/`auth.json` through policy-checked file IO (`read_text_file_within`, `write_with_policy`, codex/config.rs:7-9); auth secrets masked by default in UI (CurrentCodexGlobalConfigCard.tsx:43-87) and stored in user-owned `~/.ccgui/config.json`; CC Switch import is read-only (cc_switch.rs:3-8). This is credential management by design; nothing is sent off-machine except to providers you configure. |
@@ -55,9 +72,9 @@ Mechanical scan (verbatim): target `desktop-cc-gui`, scanner 0.1.0, rulesDigest 
 Adjudication highlights:
 
 1. All ten critical findings are false positives of two shapes: (a) DEFENSIVE guards - `pathValidation.ts:20-26` lists `/.ssh/`, `/.aws/`, `/.env` patterns that the validator REJECTS (its own tests assert rejection at pathValidation.test.ts:81-99); (b) test fixtures referencing credential paths (providers_profile tests writing fake `auth.json`).
-2. CRED-001/CRED-002 (400 findings): 130 hits are i18n locale STRINGS naming the `.claude`/`.codex` directories (src/i18n/locales/composer.ts:77-82); most others are tests asserting mask/reveal behavior over Codex `auth.json` (CurrentCodexGlobalConfigCard.test.tsx:159-176). The underlying capability - editing those files - is real and is the advertised vendor-manager feature.
+2. CRED-001/CRED-002 (400 findings): 130 hits are i18n locale STRINGS naming the `.claude`/`.codex` directories (src/i18n/locales/en/composer.ts:77-82, and the same keys in each sibling language directory); most others are tests asserting mask/reveal behavior over Codex `auth.json` (CurrentCodexGlobalConfigCard.test.tsx:159-176). The underlying capability - editing those files - is real and is the advertised vendor-manager feature.
 3. EXEC/HOOK families concentrate in `scripts/` (repo build tooling, never shipped), `.agents/skills/` (invoked-on-demand skill scripts), and vendored minified libs (`vendor/xmlchars`, lockfile OBFU-012 noise: 704 of 720 low OBFU findings are package-lock.json).
-4. The one genuinely notable runtime finding is the analytics stack: `installBaiduTongji()` runs unconditionally in the production main window (services/baiduTongji.ts:139-152, scheduled at bootstrapApp.tsx:349-366); grep of README.md, README.zh-CN.md, docs/, and the settings surface finds no user-facing disclosure or disable switch (only developer-facing docs: dev-guidelines/frontend/index.md:38,57). Against the dsh-bridge charter PRIV bar ("no telemetry without opt-in") this alone caps the subject below B.
+4. The one genuinely notable runtime finding is the analytics stack: `installBaiduTongji()` runs unconditionally in the production main window (services/baiduTongji.ts:139-152, scheduled at bootstrapApp.tsx:349-366); grep of README.md, README.zh-CN.md, docs/, and the settings surface finds no user-facing disclosure or disable switch (only developer-facing docs: dev-guidelines/frontend/index.md:38,57). Against the dsh-bridge charter PRIV bar ("no telemetry without opt-in") this is undocumented egress and sets the overall grade at D.
 5. Update check fires automatically post-startup (useUpdater.ts:320-328 subscribeStartupGateReady) though install stays click-gated; AUTO_UPDATE_ENABLED=true is hardcoded at useUpdater.ts:43.
 6. Daemon bind on UNSPECIFIED ipv4 (web_service_runtime.rs:118-121) is intentional for LAN reachability and token-gated, but the token can also travel in the query string (is_authorized accepts query param, line 248 context), which leaks into logs/proxies.
 
@@ -73,7 +90,7 @@ Positive verification performed during this audit: DSH adapter request paths rea
 
 ## Reviewer disagreement
 
-None recorded. Single-model manual adjudication; per the pipeline this card would require a second independent pass before exceeding grade C.
+None recorded against the current grade. Single-model manual adjudication; per the pipeline this card would require a second independent pass before exceeding grade C, and it does not reach that ceiling anyway. Revision 1 graded this subject C while writing that the analytics beacon has no opt-out and no disclosure; the follow-up review recorded that as an internal inconsistency, since undisclosed third-party analytics is the D band's first item. Revision 2 resolves it in favor of the band.
 
 ## Verify this yourself
 
@@ -106,12 +123,13 @@ grep -rni "opt.out\|disable.*analytic\|analytic.*toggle" reference/audits/deskto
 
 ## Methodology and pinned inputs
 
-Scanner: dsh-bridge tools/scan dist build, version 0.1.0, rulesDigest `9cc04224b1dc7e81f17677eaae91fbf686e65e7674ef6c28cc783875baaee999`. Subject pinned by git commit SHA (pre-existing shallow clone matching the target remote, HEAD verified). Manual review by one auditor covering every critical finding, sampled high findings per family, and full reads of the analytics/updater/daemon/DSH-adapter surfaces; all claims carry file:line anchors resolvable at the pinned commit. Grade semantics follow docs/trust/pipeline-architecture.md S6; caps applied: incomplete-pipeline ceiling C. Disclaimer: a grade is evidence-backed opinion over a pinned artifact, not a safety guarantee, and says nothing about versions other than the pinned commit.
+Scanner: dsh-bridge tools/scan dist build, version 0.1.0, rulesDigest `9cc04224b1dc7e81f17677eaae91fbf686e65e7674ef6c28cc783875baaee999`. Subject pinned by git commit SHA (pre-existing shallow clone matching the target remote, HEAD verified). Manual review by one auditor covering every critical finding, sampled high findings per family, and full reads of the analytics/updater/daemon/DSH-adapter surfaces; all claims carry file:line anchors resolvable at the pinned commit. Grade semantics follow docs/trust/pipeline-architecture.md S6; caps applied: incomplete-pipeline ceiling C, then lowered to D by the undisclosed-analytics finding (see Grades). Disclaimer: a grade is evidence-backed opinion over a pinned artifact, not a safety guarantee, and says nothing about versions other than the pinned commit.
 
 ## Revision history
 
 | Rev | Verdict digest basis | Change |
 |---|---|---|
 | 1 | commit `5d1c8a01`, scanned and adjudicated 2026-08-26T09:10Z | Initial card. Overall C; per-surface grades as tabulated; mechanical F adjudicated (defensive-guard and i18n false positives dominate); analytics/opt-out gap identified as the headline privacy finding. Provenance row and egress inventory amended after cross-review with a second auditor (relay-origin clarification, DeepSeek balance endpoint). |
+| 2 | same commit `5d1c8a01`, re-graded 2026-08-26 | Overall grade C to D, and the Baidu analytics surface C to D, on the reasoning now stated under Grades: the card's own evidence describes undisclosed third-party egress with no opt-out, which is the D band's first item. No new evidence; no technical claim changed. Also corrected the i18n citation from the non-existent `src/i18n/locales/composer.ts` to the real per-language path `src/i18n/locales/en/composer.ts`. |
 
 Re-vetting triggers: any change to `baidu_tongji.rs`/`services/baiduTongji.ts` (especially adding an opt-out would lift the privacy cap), any updater endpoint or pubkey change, any new daemon route, a new tagged release shipping different binaries, or 90 days elapsed.

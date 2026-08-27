@@ -56,9 +56,9 @@ URLs (`api.example.com`, `mcp.github.com` in bundled/skills/mcp-integration/exam
 `$schema` identifiers (schemas/*.json:2-3), and skill-path documentation strings
 (adapters/*/settings-map.json, host-profile.json). These describe surfaces; they do not perform
 network I/O. The `npx -y @anthropic-ai/mcp-server-*` lines (bundled/skills/autonomous-builder/assets/mcp-services-template.json) are a copy-paste template asset, not executed at install.
-The obfuscation lows are RTL/BIDI characters inside Arabic i18n text and a zero-width character
-constant used for math-fence padding (src/components/ai-elements/streamdown-plugins.ts:108 does not
-exist in this tree; the actual hit is in config/upstream-lock.json:347 naming a third-party repo).
+The obfuscation lows are RTL/BIDI characters inside Arabic i18n text plus one zero-width character
+constant. The lockfile hit at config/upstream-lock.json:347 is an identifier naming the third-party
+repo `muratcankoylan/Agent-Skills-for-Context-Engineering`, not concealed content.
 
 ## 5. What we could not check
 
@@ -99,3 +99,37 @@ grep -rnE "urllib|requests|socket" apps/ packages/ core/ --include="*.py"   # ex
 ```
 
 If your output disagrees with this card, the card is wrong; please open an issue.
+
+## 8. Methodology and pinned inputs
+
+- Subject: git commit `d5ae560440a9ecd83397bb68e77ea1aa2f2c9b78`, shallow clone retained at
+  `reference/audits/vibe-skills`; clone HEAD equals the pinned commit.
+- Scanner: dsh-bridge tools/scan 0.1.0, rulesDigest
+  `9cc04224b1dc7e81f17677eaae91fbf686e65e7674ef6c28cc783875baaee999`. Raw output retained as
+  `reference/audits/vibe-scan.json`: 131 findings over 395 files scanned (2478 skipped) -
+  0 critical, 59 high, 3 medium, 69 low. Machine grade F, driven by a CRED/NET co-occurrence inside
+  `config/upstream-lock.json` and by same-family spread across CRED, HOOK, and NET; both are
+  adjudicated in section 4.
+- Manual review covered: `apps/vgo-cli/src/vgo_cli/` (external.py, process.py, commands.py),
+  `packages/installer-core/src/vgo_installer/` (global_instruction_service.py, host_closure.py,
+  simple_skill_installer.py, bootstrap_doctor_support.py), all six adapter host-profile and
+  settings-map files, `config/global-bootstrap/`, `config/adapter-registry.json`,
+  `config/upstream-lock.json`, `scripts/setup/`, README.md (508 lines) and
+  `docs/install/README.en.md` (72 lines), plus a sample of the 253 entries in `bundled/skills/`.
+- Cross-model adversarial review: NOT performed (single reviewer). Revision 1 is capped accordingly.
+- No behavioral probe (pipeline S4 unavailable): adapter differences were read, not run.
+- Grade derivation: no egress, no credential access, and no dynamic execution in shipped Python, with
+  receipt-tracked, managed-block-only installs. Capped at C by the undisclosed host-global
+  instruction write (VS-GLOBAL-1), the unpinned global npm install on the governed path (VS-NPM-1),
+  the unexhausted 253-skill corpus (VS-FLEET-1), and the missing probe and second reviewer.
+
+## 9. Revision history
+
+| Rev | Date | Subject | Grade | Change |
+|---|---|---|---|---|
+| 1 | 2026-08-26 | git `d5ae5604` (v4.0.0) | C | Initial card. Static scan plus manual review; behavioral probe, cross-model review, and signing pending pipeline availability. |
+
+Re-verify triggers: any user-facing documentation of the `CLAUDE.md`/`AGENTS.md` write (would retire
+VS-GLOBAL-1); any pinning of `@th0rgal/ralph-wiggum` or removal of the global npm fallback; growth or
+churn in `bundled/skills/` beyond the 253 entries sampled here; the appearance of network imports in
+`apps/`, `packages/`, or `core/`; a verified release-ZIP-to-commit comparison; or 90 days elapsed.

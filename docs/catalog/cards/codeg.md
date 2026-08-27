@@ -98,3 +98,33 @@ grep -n "credentials.yaml\|auth.json" src-tauri/src/parsers/mod.rs   # sibling c
 ```
 
 If your output disagrees with this card, the card is wrong; please open an issue.
+
+## 8. Methodology and pinned inputs
+
+- Subject: git commit `4cf3869cd602eaf974fdceb9d85b095de50274f5`, shallow clone retained at
+  `reference/audits/codeg`; clone HEAD equals the pinned commit.
+- Scanner: dsh-bridge tools/scan 0.1.0, rulesDigest
+  `9cc04224b1dc7e81f17677eaae91fbf686e65e7674ef6c28cc783875baaee999`. Raw output retained as
+  `reference/audits/codeg-scan.json`: 887 findings over 1057 files scanned (612 skipped) -
+  2 critical, 754 high, 26 medium, 105 low. Machine grade F; both criticals are adjudicated above.
+- Manual review covered: `install.sh` end to end, `src-tauri/src/update/` (verify.rs, version.rs) and
+  `tauri.conf.json`, the ACP spawn layer (`acp/connection.rs`, `acp/registry.rs`,
+  `commands/acp.rs` install and env paths), `keyring_store.rs`, `web/mod.rs` and `web/auth.rs`,
+  `parsers/mod.rs`, `docker-compose.yml`, and the README install documentation.
+- Cross-model adversarial review: NOT performed (single reviewer). Revision 1 is capped accordingly.
+- No behavioral probe (pipeline S4 unavailable), so every runtime claim is read, not executed.
+- Grade derivation: an unpinned, unverified `curl | bash` headline install that `sudo cp`s a fresh
+  release binary, plus click-time global npm installs with lifecycle scripts force-enabled for one
+  package, plus a wildcard-bound control plane over every agent CLI on the machine. That is the D
+  band's install-and-blast-radius case, not the C case, even though nothing hostile was found.
+
+## 9. Revision history
+
+| Rev | Date | Subject | Grade | Change |
+|---|---|---|---|---|
+| 1 | 2026-08-26 | git `4cf3869c` (v0.28.1) | D | Initial card. Static scan plus manual review; behavioral probe, cross-model review, and signing pending pipeline availability. |
+
+Re-verify triggers: `install.sh` gaining (or continuing to lack) a signature or SHA-256 check after
+the next release; any change to the `web/mod.rs:65` default bind or to the empty-token fail-closed
+path in `web/auth.rs`; any un-pinning of an adapter package in `acp/registry.rs`; a new lifecycle-
+script override beyond `hermes-agent`; or 90 days elapsed, whichever comes first.

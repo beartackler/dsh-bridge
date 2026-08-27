@@ -25,6 +25,7 @@ import { runModel } from "../commands/model.js";
 import { runRefactor } from "../commands/refactor.js";
 import { runResume } from "../commands/resume.js";
 import { runReview } from "../commands/review.js";
+import { runSetup } from "../commands/setup.js";
 import { runStatus } from "../commands/status.js";
 import { runSuggest } from "../commands/suggest.js";
 import { runTrust } from "../commands/trust.js";
@@ -67,6 +68,14 @@ function normalized(run: CommandRunner): CommandRunner {
 export function bridgeCommandTable(ctx: BridgeContext): readonly BridgeCommand[] {
   void ctx;
   return Object.freeze(([
+    {
+      name: "bridge-setup",
+      aliases: ["bridge-onboard"],
+      summary: "Guided setup: model route, imports from your previous harness, and recommended plugins",
+      usage: "[reset]",
+      // MOUNT(setup): src/commands/setup.ts implements the seven-step onboarding flow.
+      run: runSetup as CommandRunner,
+    },
     {
       name: "bridge-help",
       aliases: [],

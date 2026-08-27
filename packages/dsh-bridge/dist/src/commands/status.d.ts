@@ -104,7 +104,7 @@ export interface CollectedStatus {
  * paths handed in (dshHome listing, INDEX.md path); nothing else touches disk.
  */
 export declare function collectStatus(inputs: StatusInputs, readFile: (path: string) => string): CollectedStatus;
-/** Locate docs/catalog/INDEX.md by walking up from this compiled module. */
+/** Locate INDEX.md: packaged data first, then a repo checkout override. */
 export declare function resolveIndexPath(startDir?: string): string | undefined;
 /** Render collected rows into the dashboard markdown. */
 export declare function renderStatus(ctx: BridgeContext, collected: CollectedStatus, installedCount: number, drift?: readonly DriftEntry[]): string;

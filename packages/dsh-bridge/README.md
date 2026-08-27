@@ -18,14 +18,23 @@ and `docs/specs/commands/*.md` for per-command behavior.
 | `src/lib/paths.ts` | Credential/config path constants from the `/connect` detection matrix. Existence and shape checks return metadata only, never secret contents. |
 | `src/lib/scan-client.ts` | Typed wrapper that spawns `tools/scan` (Node subprocess) and parses its JSON verdict into typed findings. |
 | `src/lib/registry.ts` | Phase-1 command descriptor table with typed stubs. |
+| `src/lib/catalog-paths.ts` | Single resolver for catalog files: packaged `data/` first, repo `docs/catalog/` as an override, then an error naming both paths. |
+| `scripts/build-data.mjs` | Generates `data/` from `docs/catalog/` so an installed package carries its own catalog. |
+| `data/` | Generated, shipped in the tarball: `manifest.json` (compact, 676 KiB), `INDEX.md` (28 KiB), `cards/` (1.0 MiB). |
 | `test/self-test.ts` | `node:test` suite covering each module's basic contracts. |
 
 ## Build
 
 ```sh
 npm install        # devDependencies only: typescript, @types/node, peer packages
-npm run build      # tsc -> dist/
+npm run build      # build:data -> data/, then tsc -> dist/
+npm run build:data # regenerate data/ from docs/catalog/ only
 ```
+
+`data/` is generated from `docs/catalog/` and listed in `files`, so an
+installed copy resolves the catalog with no checkout present. A checkout's
+`docs/catalog/` overrides it, so live catalog edits are visible while
+developing.
 
 Peer dependencies `@deepseek-ai/cordis` and `@deepseek-ai/schemastery` are also
 declared as devDependencies so type-checking works in-repo while staying

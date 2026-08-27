@@ -12,8 +12,9 @@
  * S5 plugin/trust-card staleness from docs/catalog/INDEX.md verified dates,
  * and S6 token usage when ctx provides it.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { catalogEntry } from "../lib/catalog-paths.js";
 import { driftStatusLine, installedDrift } from "../lib/drift.js";
 import { gradeCell, heading } from "../lib/output.js";
 /** A catalog card older than this many days is stale (task + spec S5). */
@@ -203,19 +204,9 @@ export function collectStatus(inputs, readFile) {
     }
     return { rows, staleCards, totalCards };
 }
-/** Locate docs/catalog/INDEX.md by walking up from this compiled module. */
-export function resolveIndexPath(startDir = join(import.meta.dirname, "..", "..")) {
-    let dir = startDir;
-    for (let hops = 0; hops < 8; hops += 1) {
-        const candidate = join(dir, "docs", "catalog", "INDEX.md");
-        if (existsSync(candidate))
-            return candidate;
-        const parent = join(dir, "..");
-        if (parent === dir)
-            break;
-        dir = parent;
-    }
-    return undefined;
+/** Locate INDEX.md: packaged data first, then a repo checkout override. */
+export function resolveIndexPath(startDir) {
+    return catalogEntry("INDEX.md", startDir);
 }
 /** Installed-plugin count from the profile manifest, 0 when absent/unreadable. */
 function countInstalled(dshHome, profile) {

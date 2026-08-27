@@ -25,9 +25,8 @@
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
+import { catalogEntry, unavailableDetail } from "../lib/catalog-paths.js";
 import { gradeCell, gradeLabel } from "../lib/output.js";
 import type { BridgeContext, CommandResult } from "../lib/types.js";
 
@@ -74,19 +73,11 @@ export interface InstallOptions {
  * throwing.
  */
 export function resolveInstallCatalog(
-  startDir: string = dirname(fileURLToPath(import.meta.url)),
+  startDir?: string,
 ): { manifestPath: string; indexPath: string } | undefined {
-  let dir = startDir;
-  for (let hops = 0; hops < 8; hops += 1) {
-    const catalog = join(dir, "docs", "catalog");
-    if (existsSync(join(catalog, "manifest.json"))) {
-      return { manifestPath: join(catalog, "manifest.json"), indexPath: join(catalog, "INDEX.md") };
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return undefined;
+  const manifestPath = catalogEntry("manifest.json", startDir);
+  if (manifestPath === undefined) return undefined;
+  return { manifestPath, indexPath: catalogEntry("INDEX.md", startDir) ?? "" };
 }
 
 /**
@@ -513,7 +504,7 @@ export async function runInstall(
   let candidates: readonly InstallCandidate[] = [];
   let degraded = "";
   if (manifestPath === undefined) {
-    degraded = "docs/catalog/manifest.json was not found in this checkout";
+    degraded = unavailableDetail("manifest.json");
   } else {
     try {
       candidates = loadCandidates(manifestPath, indexPath);

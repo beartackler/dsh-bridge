@@ -37,16 +37,16 @@ import {
   type FindingsDiff,
   type InstalledPlugin,
 } from "../lib/drift.js";
+import { catalogEntry } from "../lib/catalog-paths.js";
 import { gradeCell, gradeLabel } from "../lib/output.js";
 import { scanDirectory, type ScanReport } from "../lib/scan-client.js";
 import { SEVERITIES, type BridgeContext, type Severity } from "../lib/types.js";
 
 const USAGE = "Usage: /bridge-trust <plugin> | scan <directory> | list | refresh [<plugin>]";
 
-/** Directory holding committed trust cards, resolved from this module's build output. */
+/** Directory holding committed trust cards: packaged data, else a checkout. */
 function cardsDir(): string {
-  // dist/src/commands/trust.js -> dist/src -> dist -> package -> packages -> repo
-  return join(import.meta.dirname, "..", "..", "..", "..", "..", "docs", "catalog", "cards");
+  return catalogEntry("cards") ?? join(import.meta.dirname, "..", "..", "data", "cards");
 }
 
 /**

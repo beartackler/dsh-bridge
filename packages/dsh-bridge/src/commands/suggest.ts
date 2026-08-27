@@ -17,6 +17,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 
+import { unavailableDetail } from "../lib/catalog-paths.js";
 import { bulletList, gradeCell, heading, table } from "../lib/output.js";
 import type { CommandResult } from "../lib/types.js";
 
@@ -202,7 +203,7 @@ export async function runSuggest(
       markdown: [
         heading("/bridge-suggest"),
         "",
-        "Catalog unavailable (docs/catalog/manifest.json not found); cannot cross-check.",
+        `Catalog unavailable; cannot cross-check.\n\n${unavailableDetail("manifest.json")}`,
         "",
       ].join("\n"),
     };

@@ -15,6 +15,7 @@
  * the grade verbatim from docs/catalog/cards.
  */
 import { readFileSync, readdirSync } from "node:fs";
+import { unavailableDetail } from "../lib/catalog-paths.js";
 import { bulletList, gradeCell, heading, table } from "../lib/output.js";
 import { extractGrade, loadManifestCached, repoBase, resolveCatalogPaths, } from "../lib/catalog-access.js";
 const STOP_WORDS = new Set([
@@ -151,7 +152,7 @@ export async function runSuggest(ctx, args, options = {}) {
             markdown: [
                 heading("/bridge-suggest"),
                 "",
-                "Catalog unavailable (docs/catalog/manifest.json not found); cannot cross-check.",
+                `Catalog unavailable; cannot cross-check.\n\n${unavailableDetail("manifest.json")}`,
                 "",
             ].join("\n"),
         };

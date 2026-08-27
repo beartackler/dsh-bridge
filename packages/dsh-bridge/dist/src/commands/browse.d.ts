@@ -43,8 +43,8 @@ export interface BrowseOptions {
 export declare class BrowseError extends Error {
 }
 /**
- * Locate docs/catalog relative to this compiled module by walking up to the
- * repo root. Returns undefined when the checkout has no catalog yet, so the
+ * Locate the catalog through lib/catalog-paths: packaged data first, then a
+ * repo checkout override. Returns undefined when neither exists, so the
  * command degrades to its honest not-found rendering instead of throwing.
  */
 export declare function resolveCatalogPaths(startDir?: string): {

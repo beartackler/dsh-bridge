@@ -16,8 +16,8 @@
  *  - Output stays ASCII, emoji-free (CHARTER.md non-negotiable 4).
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { catalogEntry, unavailableDetail } from "../lib/catalog-paths.js";
 import { gradeCell } from "../lib/output.js";
 /** Default page size for list rendering (browse spec section 3.1). */
 export const PAGE_SIZE = 10;
@@ -42,28 +42,21 @@ export class BrowseError extends Error {
 // Catalog location
 // ---------------------------------------------------------------------------
 /**
- * Locate docs/catalog relative to this compiled module by walking up to the
- * repo root. Returns undefined when the checkout has no catalog yet, so the
+ * Locate the catalog through lib/catalog-paths: packaged data first, then a
+ * repo checkout override. Returns undefined when neither exists, so the
  * command degrades to its honest not-found rendering instead of throwing.
  */
-export function resolveCatalogPaths(startDir = dirname(fileURLToPath(import.meta.url))) {
-    let dir = startDir;
-    for (let hops = 0; hops < 8; hops += 1) {
-        const catalog = join(dir, "docs", "catalog");
-        if (existsSync(join(catalog, "manifest.json"))) {
-            const indexMdPath = join(catalog, "INDEX.md");
-            return {
-                manifestPath: join(catalog, "manifest.json"),
-                cardsDir: join(catalog, "cards"),
-                ...(existsSync(indexMdPath) ? { indexMdPath } : {}),
-            };
-        }
-        const parent = dirname(dir);
-        if (parent === dir)
-            break;
-        dir = parent;
-    }
-    return undefined;
+export function resolveCatalogPaths(startDir) {
+    const manifestPath = catalogEntry("manifest.json", startDir);
+    if (manifestPath === undefined)
+        return undefined;
+    const indexMdPath = catalogEntry("INDEX.md", startDir);
+    const cardsDir = catalogEntry("cards", startDir);
+    return {
+        manifestPath,
+        cardsDir: cardsDir ?? join(manifestPath, "..", "cards"),
+        ...(indexMdPath === undefined ? {} : { indexMdPath }),
+    };
 }
 // ---------------------------------------------------------------------------
 // Manifest loading (lazy, memoized per path+mtime)
@@ -414,7 +407,7 @@ function usageMarkdown() {
     ].join("\n");
 }
 function notFoundMarkdown(detail) {
-    return ["### /bridge-browse", "", "Catalog is unavailable.", "", detail, "", "Rebuild docs/catalog, then retry.", ""].join("\n");
+    return ["### /bridge-browse", "", "Catalog is unavailable.", "", detail, ""].join("\n");
 }
 /** Per-context pagination memory for `next` / `prev`. WeakMap: no leaks. */
 const lastListPage = new WeakMap();
@@ -495,7 +488,7 @@ export async function runBrowse(ctx, args, options = {}) {
     const cardsDir = options.cardsDir ?? positions?.cardsDir;
     const indexMdPath = options.indexMdPath ?? positions?.indexMdPath;
     if (manifestPath === undefined) {
-        return { markdown: notFoundMarkdown("docs/catalog/manifest.json was not found in this checkout.") };
+        return { markdown: notFoundMarkdown(unavailableDetail("manifest.json")) };
     }
     let entries;
     try {

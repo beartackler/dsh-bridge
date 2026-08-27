@@ -24,8 +24,7 @@
  *  - Every emitted command is accompanied by its undo command (AC-21).
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { catalogEntry, unavailableDetail } from "../lib/catalog-paths.js";
 import { gradeCell, gradeLabel } from "../lib/output.js";
 /** Grades that may be installed after a single confirmation (spec §5.1). */
 const CONSENT_FREE_GRADES = ["A", "B", "C"];
@@ -39,19 +38,11 @@ export const RISK_FLAG = "i-accept-unverified-risk";
  * Returns undefined when absent so the command degrades (F-4) instead of
  * throwing.
  */
-export function resolveInstallCatalog(startDir = dirname(fileURLToPath(import.meta.url))) {
-    let dir = startDir;
-    for (let hops = 0; hops < 8; hops += 1) {
-        const catalog = join(dir, "docs", "catalog");
-        if (existsSync(join(catalog, "manifest.json"))) {
-            return { manifestPath: join(catalog, "manifest.json"), indexPath: join(catalog, "INDEX.md") };
-        }
-        const parent = dirname(dir);
-        if (parent === dir)
-            break;
-        dir = parent;
-    }
-    return undefined;
+export function resolveInstallCatalog(startDir) {
+    const manifestPath = catalogEntry("manifest.json", startDir);
+    if (manifestPath === undefined)
+        return undefined;
+    return { manifestPath, indexPath: catalogEntry("INDEX.md", startDir) ?? "" };
 }
 /**
  * `owner/repo`, lowercase, `.git` and any `#subpath` stripped. Subpath entries
@@ -400,7 +391,7 @@ export async function runInstall(ctx, args, options = {}) {
     let candidates = [];
     let degraded = "";
     if (manifestPath === undefined) {
-        degraded = "docs/catalog/manifest.json was not found in this checkout";
+        degraded = unavailableDetail("manifest.json");
     }
     else {
         try {

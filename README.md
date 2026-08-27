@@ -31,11 +31,43 @@ dsh-bridge is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 
 ## Install
 
-Requires [pnpm](https://pnpm.io) 10 or newer on your PATH (`dsh plugin` manages profile dependencies through it).
+One command, from a machine with nothing installed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs | node -
+```
+
+Piping a script into an interpreter means trusting what is on the other end. If you would rather read it first, that is the same file:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs
+less install.mjs && node install.mjs
+```
+
+Add `--dry-run` to print every command and every file write without executing any of them.
+
+The script checks Node and pnpm, installs the DSH runtime if it is missing, creates an isolated `DSH_HOME` so your real `~/.dsh` is untouched, pre-creates `.credentials.yaml` at mode 600 (the harness refuses to boot otherwise), installs dsh-bridge into the `web` profile, and prints the exact command to boot. Re-running it is safe: every step reports "already done" rather than repeating work, and it never overwrites a file it did not create.
+
+**What it cannot do for you.** DSH ships no model. You supply a provider endpoint and an API key, and the script leaves you at `/bridge-setup` inside the UI, which walks through connecting one.
+
+### Requirements
+
+| Requirement | Why |
+|---|---|
+| Node 22 or newer | The harness runtime targets it |
+| [pnpm](https://pnpm.io) 10 or newer | `dsh plugin` manages profile dependencies through it |
+| A provider endpoint and API key | Nothing answers until a model route is connected |
+
+### Manual install
+
+If DSH is already set up and you only want the plugin:
 
 ```bash
 dsh plugin --profile web add github:beartackler/dsh-bridge
+dsh --profile web        # serves http://127.0.0.1:3080
 ```
+
+This assumes DSH is installed, a `DSH_HOME` you are happy to write to, `.credentials.yaml` at mode 600, and a model route already connected. If any of those are not true, use the installer above or the full walkthrough in [docs/getting-started.md](docs/getting-started.md), which includes a working custom OpenAI-compatible provider configuration.
 
 The repository ships its compiled `dist/` output, so nothing builds on your machine at install time and dsh asks for no build-script permission. To make sure a later push cannot silently change what runs, pin a commit:
 
@@ -43,11 +75,9 @@ The repository ships its compiled `dist/` output, so nothing builds on your mach
 dsh plugin --profile web add "github:beartackler/dsh-bridge#<commit-sha>"
 ```
 
-Then boot and use `/bridge-help` inside DSH:
+The installer takes the same pin as `--ref <commit-sha>`.
 
-```bash
-dsh --profile web        # serves http://127.0.0.1:3080
-```
+Then use `/bridge-help` inside DSH.
 
 Verified against `@deepseek-ai/dsh` 0.1.1-rc.2: a fresh install from a git checkout activates the bundle with no warnings and all 17 commands register ([how this was verified](docs/research/live-mount-report.md)).
 

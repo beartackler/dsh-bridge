@@ -15,6 +15,7 @@ import { closeSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, statS
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { ALL_RULES, rulesDigest, sortFindings, SEVERITY_RANK } from "./rules/index.js";
 import { grade, toJsonReport, toMarkdownReport } from "./report.js";
+import { astFindingsForRule, isAstAnalyzable, parseSourceFile } from "./ast.js";
 export const SCANNER_VERSION = "0.1.0";
 /** Directories never worth scanning; scanning them produces noise, not signal. */
 const SKIP_DIRS = new Set([
@@ -199,8 +200,16 @@ export function walk(root) {
 function toRelPosix(root, absolute) {
     return relative(root, absolute).split(sep).join("/");
 }
-export function scanContent(content, relPath, rules = ALL_RULES) {
+export function scanContent(content, relPath, rules = ALL_RULES, options = {}) {
     const findings = [];
+    if (options.ast) {
+        const sourceFile = parseSourceFile(content, relPath);
+        if (sourceFile !== null) {
+            for (const rule of rules) {
+                findings.push(...astFindingsForRule(sourceFile, relPath, rule.id));
+            }
+        }
+    }
     for (const rule of rules) {
         if (rule.appliesTo && !rule.appliesTo(relPath))
             continue;
@@ -281,7 +290,7 @@ export function scanDirectory(target, options = {}) {
             }
             filesScanned += 1;
             bytesScanned += fileSize;
-            findings.push(...scanContent(loaded.content, relPath, rules));
+            findings.push(...scanContent(loaded.content, relPath, rules, { ast: options.ast === true && isAstAnalyzable(relPath) }));
         }
         else {
             // Oversized-but-under-limit: probe in windows through one shared buffer, and only
@@ -316,7 +325,7 @@ export function scanDirectory(target, options = {}) {
             }
             filesScanned += 1;
             bytesScanned += fileSize;
-            findings.push(...scanContent(content, relPath, rules));
+            findings.push(...scanContent(content, relPath, rules, { ast: options.ast === true && isAstAnalyzable(relPath) }));
         }
     }
     return {
@@ -347,6 +356,9 @@ export function parseArgs(argv) {
                 i += 1;
                 break;
             }
+            case "--ast":
+                options.ast = true;
+                break;
             case "--fail-on": {
                 const value = argv[i + 1];
                 if (!value || !(value in SEVERITY_RANK)) {
@@ -380,6 +392,7 @@ Usage:
   dsh-scan <target-dir> [options]
 
 Options:
+  --ast               Also run the AST detector (requires typescript at runtime)
   --json <path>       Write the canonical JSON verdict to <path>
   --markdown <path>   Write the markdown trust-card draft to <path>
   --fail-on <sev>     Exit 1 if any finding is at or above <sev>
@@ -415,7 +428,7 @@ export function main(argv = process.argv.slice(2)) {
         process.stderr.write(`dsh-scan: target is not a directory: ${parsed.target}\n`);
         return 2;
     }
-    const result = scanDirectory(parsed.target);
+    const result = scanDirectory(parsed.target, { ast: parsed.ast === true });
     const grading = grade(result.findings);
     try {
         if (parsed.json)

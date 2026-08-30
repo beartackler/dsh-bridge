@@ -325,10 +325,6 @@ function addKind(map: KindMap, name: string, kind: Kind): boolean {
   return true;
 }
 
-function hasKind(map: KindMap, name: string, kind: Kind): boolean {
-  return map.get(name)?.has(kind) === true;
-}
-
 /* ------------------------------------------------------------------------- */
 /* Analysis                                                                   */
 /* ------------------------------------------------------------------------- */

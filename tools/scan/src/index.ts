@@ -26,6 +26,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { ALL_RULES, rulesDigest, sortFindings, SEVERITY_RANK, type Finding, type Rule, type Severity } from "./rules/index.js";
 import { grade, toJsonReport, toMarkdownReport, type ScanResult } from "./report.js";
+import { astFindingsForRule, isAstAnalyzable, parseSourceFile } from "./ast.js";
 
 export const SCANNER_VERSION = "0.1.0";
 
@@ -172,6 +173,8 @@ function probeOversizedFile(
 export interface ScanOptions {
   readonly rules?: readonly Rule[];
   readonly maxFileBytes?: number;
+  /** Enable the AST detector (optional dependency: typescript). Off by default. */
+  readonly ast?: boolean;
 }
 
 function isScannable(path: string): boolean {
@@ -224,8 +227,17 @@ export function scanContent(
   content: string,
   relPath: string,
   rules: readonly Rule[] = ALL_RULES,
+  options: { readonly ast?: boolean } = {},
 ): Finding[] {
   const findings: Finding[] = [];
+  if (options.ast) {
+    const sourceFile = parseSourceFile(content, relPath);
+    if (sourceFile !== null) {
+      for (const rule of rules) {
+        findings.push(...astFindingsForRule(sourceFile, relPath, rule.id));
+      }
+    }
+  }
   for (const rule of rules) {
     if (rule.appliesTo && !rule.appliesTo(relPath)) continue;
     try {
@@ -309,7 +321,7 @@ export function scanDirectory(target: string, options: ScanOptions = {}): ScanRe
       }
       filesScanned += 1;
       bytesScanned += fileSize;
-      findings.push(...scanContent(loaded.content, relPath, rules));
+      findings.push(...scanContent(loaded.content, relPath, rules, { ast: options.ast === true && isAstAnalyzable(relPath) }));
     } else {
       // Oversized-but-under-limit: probe in windows through one shared buffer, and only
       // pay a whole-file decode when the probe saw evidence. The second pass recomputes
@@ -340,7 +352,7 @@ export function scanDirectory(target: string, options: ScanOptions = {}): ScanRe
       }
       filesScanned += 1;
       bytesScanned += fileSize;
-      findings.push(...scanContent(content, relPath, rules));
+      findings.push(...scanContent(content, relPath, rules, { ast: options.ast === true && isAstAnalyzable(relPath) }));
     }
   }
 
@@ -366,6 +378,7 @@ interface CliOptions {
   markdown?: string;
   failOn?: Severity;
   quiet: boolean;
+  ast?: boolean;
 }
 
 export function parseArgs(argv: readonly string[]): CliOptions | { error: string } {
@@ -383,6 +396,9 @@ export function parseArgs(argv: readonly string[]): CliOptions | { error: string
         i += 1;
         break;
       }
+      case "--ast":
+        options.ast = true;
+        break;
       case "--fail-on": {
         const value = argv[i + 1];
         if (!value || !(value in SEVERITY_RANK)) {
@@ -415,6 +431,7 @@ Usage:
   dsh-scan <target-dir> [options]
 
 Options:
+  --ast               Also run the AST detector (requires typescript at runtime)
   --json <path>       Write the canonical JSON verdict to <path>
   --markdown <path>   Write the markdown trust-card draft to <path>
   --fail-on <sev>     Exit 1 if any finding is at or above <sev>
@@ -454,7 +471,7 @@ export function main(argv: readonly string[] = process.argv.slice(2)): number {
     return 2;
   }
 
-  const result = scanDirectory(parsed.target);
+  const result = scanDirectory(parsed.target, { ast: parsed.ast === true });
   const grading = grade(result.findings);
 
   try {

@@ -17,6 +17,8 @@ export declare const SCANNER_VERSION = "0.1.0";
 export interface ScanOptions {
     readonly rules?: readonly Rule[];
     readonly maxFileBytes?: number;
+    /** Enable the AST detector (optional dependency: typescript). Off by default. */
+    readonly ast?: boolean;
 }
 /**
  * Recursive directory walk returning repo-relative POSIX paths, sorted.
@@ -28,7 +30,9 @@ export interface ScanOptions {
  * lstat-like check via withFileTypes to avoid escaping the tree).
  */
 export declare function walk(root: string): string[];
-export declare function scanContent(content: string, relPath: string, rules?: readonly Rule[]): Finding[];
+export declare function scanContent(content: string, relPath: string, rules?: readonly Rule[], options?: {
+    readonly ast?: boolean;
+}): Finding[];
 export declare function scanDirectory(target: string, options?: ScanOptions): ScanResult;
 interface CliOptions {
     target: string;
@@ -36,6 +40,7 @@ interface CliOptions {
     markdown?: string;
     failOn?: Severity;
     quiet: boolean;
+    ast?: boolean;
 }
 export declare function parseArgs(argv: readonly string[]): CliOptions | {
     error: string;

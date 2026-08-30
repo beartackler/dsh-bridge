@@ -262,9 +262,6 @@ function addKind(map, name, kind) {
     set.add(kind);
     return true;
 }
-function hasKind(map, name, kind) {
-    return map.get(name)?.has(kind) === true;
-}
 /** Shipped/loaded artifacts, where dynamic execution is critical rather than high. */
 function isShippedArtifact(filePath) {
     return /(^|\/)(lib|dist|build|out)\//.test(filePath) || /\.min\.[cm]?js$/.test(filePath);

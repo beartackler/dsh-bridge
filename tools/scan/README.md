@@ -225,3 +225,17 @@ src/
 ```
 
 MIT.
+
+## AST detector (opt-in)
+
+The regex pass cannot see through indirection. `--ast` adds a TypeScript-compiler pass that
+resolves indirect eval chains (`const f = eval; f(x)`), computed member calls
+(`obj["fet"+"ch"]`), non-literal dynamic imports, and credential-read-to-network data flow.
+
+```bash
+node dist/index.js <target> --ast
+```
+
+Findings carry an `analysis` field (`ast` or absent for regex) so a reader can tell which
+detector produced each hit. The pass is off by default: it requires `typescript` at runtime and
+changes finding counts, so existing verdicts stay byte-stable unless you ask for it.

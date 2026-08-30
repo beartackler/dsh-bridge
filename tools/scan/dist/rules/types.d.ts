@@ -21,6 +21,8 @@ export type RuleFamily = "EXEC" | "NET" | "CRED" | "FS" | "HOOK" | "OBFU" | "SUP
  * A single piece of evidence. This is the unit the report card cites.
  * `path` is always repo-relative + POSIX-separated so findings are portable across machines.
  */
+/** Which detector produced a finding. AST findings cite resolved structure; regex cites text. */
+export type AnalysisMode = "regex" | "ast";
 export interface Finding {
     /** Stable identifier, e.g. `EXEC-001`. Unique per rule + detector within the rule. */
     readonly id: string;
@@ -43,6 +45,8 @@ export interface Finding {
     readonly confidence: number;
     /** Optional human note: known false-positive shapes, or what would disprove the hit. */
     readonly note?: string;
+    /** Which detector produced this hit. Absent (regex) keeps legacy fixtures byte-stable. */
+    readonly analysis?: AnalysisMode;
 }
 /** A scanner rule. Rules are pure: same (content, filePath) => same findings. */
 export interface Rule {

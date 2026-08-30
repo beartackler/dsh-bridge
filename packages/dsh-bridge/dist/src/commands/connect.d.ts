@@ -23,6 +23,7 @@
  */
 import type { BridgeCommand } from "../lib/registry.js";
 import type { BridgeContext, CommandResult, DetectionRow } from "../lib/types.js";
+import { type CustomRouteRequest } from "./connect-custom.js";
 /**
  * Per-provider connector facts: the base URL the smoke test pings, the env
  * var a route reads through `!!js process.env.X`, and the vendor CLI that
@@ -91,11 +92,19 @@ export declare function smokeProvider(provider: string, options?: SmokeOptions):
 export declare function renderSmoke(ctx: BridgeContext, provider: string, outcome: SmokeOutcome): string;
 /** Parse `/connect ...` args (shared `_`/`rest` convention) into an invocation. */
 export interface ConnectInvocation {
-    readonly mode: "list" | "test" | "apply";
+    readonly mode: "list" | "test" | "apply" | "custom";
     readonly provider?: string;
     /** Explicit consent for the `apply` write (`--apply`). */
     readonly confirmed?: boolean;
 }
+/** Usage line for the custom form, printed on any parse failure. */
+export declare const CUSTOM_USAGE: string;
+/**
+ * Build the custom-route request from flags. `--key-env` takes a NAME; a value
+ * that looks like a secret is refused downstream by `assertNotSecret`, before
+ * it can reach a plan or a file.
+ */
+export declare function parseCustomArgs(args: Readonly<Record<string, string>>): CustomRouteRequest;
 export declare function parseConnectArgs(args: Readonly<Record<string, string>>): ConnectInvocation;
 /** Phase-1 runner: detection matrix by default; `test <provider>` for the smoke. */
 export declare function runConnect(ctx: BridgeContext, args: Readonly<Record<string, string>>): Promise<CommandResult>;

@@ -108,6 +108,29 @@ export function routeBlock(plan) {
         ...plan.lines,
     ].join("\n");
 }
+/**
+ * Where the key value actually goes. `apiKeyEnv` is a credential REFERENCE
+ * name resolved through the credentials seam, not a shell variable that must
+ * exist (dsh-llm-pi-ai/lib/types/config.d.ts:55; docs/getting-started.md:153).
+ * Both places that accept it are named here because a user who only exports a
+ * shell variable and never writes the credentials file gets a route that fails
+ * with no useful message.
+ */
+export function credentialInstructions(ctx, envVar) {
+    const credentials = `${ctx.paths.dshHome}/.credentials.yaml`;
+    return [
+        "Put the key value in one of these two places. Never in the config file above:",
+        "",
+        "```sh",
+        `# preferred: the credentials file, mode 600, key referenced by the name ${envVar}`,
+        `printf '%s: %s\\n' ${envVar} "$YOUR_KEY" >> ${credentials} && chmod 600 ${credentials}`,
+        "",
+        "# or export it in the shell you start dsh from",
+        `export ${envVar}=<your key>`,
+        "```",
+        "",
+    ];
+}
 /** Render the plan as the diff a user reads before consenting. */
 export function renderRouteDiff(ctx, plan, existing) {
     return [
@@ -123,6 +146,7 @@ export function renderRouteDiff(ctx, plan, existing) {
         `The route references $${plan.envVar} by name. dsh-bridge never reads or`,
         "writes the key value, so rotating the key needs no config change.",
         "",
+        ...credentialInstructions(ctx, plan.envVar),
     ].join("\n");
 }
 // ---------------------------------------------------------------------------
@@ -140,6 +164,12 @@ export function isAppendableSequence(contents) {
     for (const line of lines) {
         if (line.trim() === "" || line.trimStart().startsWith("#"))
             continue;
+        // `[]` is the empty flow sequence the harness itself seeds a fresh profile
+        // patch with. Refusing it is BUG 1 of docs/research/e2e-npx-journey.md:88,
+        // where the installer told a user to hand-edit the file it had just
+        // written. An empty list is a list, and appending to it is safe.
+        if (line.trim() === "[]")
+            continue;
         if (line.startsWith("- ")) {
             sawEntry = true;
             continue;
@@ -151,12 +181,42 @@ export function isAppendableSequence(contents) {
     }
     return true;
 }
-/** True when this provider's row is already present in the patch file. */
+/**
+ * True when this plan's rows are already present in the patch file. A plan
+ * that also selects the route must show BOTH rows: a provider declared but not
+ * selected is the silent half-route the journey documents
+ * (docs/getting-started.md:150-152), and reporting it as landed would be a lie.
+ */
 export function routeAlreadyPresent(contents, plan) {
+    if (plan.selects === true && !selectionPresent(contents, plan.provider))
+        return false;
     if (plan.rowId.startsWith("llm-pi-ai:")) {
         return /^\s*-\s*id:\s*llm-pi-ai\s*$/m.test(contents) && new RegExp(`^\\s+${plan.provider}:\\s*$`, "m").test(contents);
     }
     return new RegExp(`^\\s*-\\s*id:\\s*${plan.rowId}\\s*$`, "m").test(contents);
+}
+/**
+ * Drop a lone `[]` from an otherwise entry-less file, keeping the comments.
+ * The empty list carries no entries, so nothing is lost, and `[]` followed by
+ * `- id: ...` would not be a valid YAML document.
+ */
+export function stripEmptyFlowSeq(contents) {
+    const lines = contents.split(/\r?\n/);
+    if (lines.some((line) => line.startsWith("- ")))
+        return contents;
+    return lines.filter((line) => line.trim() !== "[]").join("\n");
+}
+/** True when the provider row alone is present, ignoring any selection row. */
+export function routeDeclared(contents, plan) {
+    if (plan.rowId.startsWith("llm-pi-ai:")) {
+        return /^\s*-\s*id:\s*llm-pi-ai\s*$/m.test(contents) && new RegExp(`^\\s+${plan.provider}:\\s*$`, "m").test(contents);
+    }
+    return new RegExp(`^\\s*-\\s*id:\\s*${plan.rowId}\\s*$`, "m").test(contents);
+}
+/** True when an `agent-default-model` row selects this route. */
+export function selectionPresent(contents, route) {
+    return (/^\s*-\s*id:\s*agent-default-model\s*$/m.test(contents) &&
+        new RegExp(`^\\s+provider:\\s*${route}\\s*$`, "m").test(contents));
 }
 /**
  * Append the route, backing the previous file up first and rolling back if
@@ -179,7 +239,17 @@ export function applyRoute(io, path, plan) {
                 error: "patch file is not a plain YAML sequence of patch entries; refusing to append. Edit it by hand instead.",
             };
         }
-        if (routeAlreadyPresent(previous, plan)) {
+        if (routeDeclared(previous, plan)) {
+            // A declared-but-unselected route is the half-route failure mode. Say so
+            // precisely rather than appending a second, duplicate provider block.
+            if (plan.selects === true && !selectionPresent(previous, plan.provider)) {
+                return {
+                    written: false,
+                    error: `${plan.provider} is declared in this file but no agent-default-model row selects it, ` +
+                        `so the route is half-written. Add this row by hand, then reboot:\n` +
+                        `- id: agent-default-model\n  config:\n    provider: ${plan.provider}\n    model: <model-id>`,
+                };
+            }
             return { written: false, error: `a route for ${plan.provider} is already configured in this file; nothing to do.` };
         }
     }
@@ -192,8 +262,11 @@ export function applyRoute(io, path, plan) {
             return { written: false, error: `could not create ${backupPath}: ${error.message}` };
         }
     }
-    const separator = previous === "" || previous.endsWith("\n") ? "" : "\n";
-    const next = `${previous}${separator}${previous.trim() === "" ? "" : "\n"}${routeBlock(plan)}\n`;
+    // An empty flow sequence is replaced rather than appended to: `[]` followed
+    // by `- id: ...` is not a valid YAML document.
+    const body = stripEmptyFlowSeq(previous);
+    const separator = body === "" || body.endsWith("\n") ? "" : "\n";
+    const next = `${body}${separator}${body.trim() === "" ? "" : "\n"}${routeBlock(plan)}\n`;
     try {
         io.writeFile(path, next);
         // Verification is part of the write: an unverifiable result is a failure.
@@ -229,13 +302,13 @@ export function applyRoute(io, path, plan) {
 // Command surface
 // ---------------------------------------------------------------------------
 /** Consent copy for the preview form. `--apply` is the explicit consent. */
-export function confirmationPrompt(provider) {
+export function confirmationPrompt(provider, applyCommand) {
     return [
         "Nothing has been written. To apply this change, type the command with",
         "the explicit flag:",
         "",
         "```",
-        `/bridge-connect apply ${provider} --apply`,
+        applyCommand ?? `/bridge-connect apply ${provider} --apply`,
         "```",
         "",
         "The previous file is copied to cordis.patch.yml.bak before the write.",
@@ -252,12 +325,21 @@ export function renderApplied(ctx, plan, outcome) {
         ctx.output.card(`Applied - ${plan.provider}`, [
             ["file", ctx.paths.profilePatch],
             ["row", plan.rowId],
+            ["selection", plan.selects === true ? `agent-default-model -> ${plan.provider}` : "not written by this row"],
             ["credential", `$${plan.envVar} (referenced by name)`],
             ["backup", outcome.backupPath ?? "none (file created)"],
-            ["verified", outcome.verified === true ? "route present on re-read" : "not verified"],
+            [
+                "verified",
+                outcome.verified === true
+                    ? plan.selects === true
+                        ? "provider and selection rows both present on re-read"
+                        : "route present on re-read"
+                    : "not verified",
+            ],
         ]),
         restore,
         "",
+        ...credentialInstructions(ctx, plan.envVar),
         "Smoke-test it:",
         "",
         "```sh",
@@ -298,11 +380,19 @@ export function runConnectApply(ctx, provider, apply, io = nodeApplyIo()) {
             ].join("\n"),
         };
     }
+    return applyPlan(ctx, plan, apply, io);
+}
+/**
+ * Preview-or-write for an already-built plan. Shared by the provider-table
+ * path above and by the custom OpenAI-compatible path (connect-custom.ts), so
+ * both get the same backup, rollback, and post-write verification.
+ */
+export function applyPlan(ctx, plan, apply, io = nodeApplyIo()) {
     const path = ctx.paths.profilePatch;
     const existing = io.exists(path);
     if (!apply) {
         return {
-            markdown: [renderRouteDiff(ctx, plan, existing), ...confirmationPrompt(plan.provider)].join("\n"),
+            markdown: [renderRouteDiff(ctx, plan, existing), ...confirmationPrompt(plan.provider, plan.applyCommand)].join("\n"),
             data: { kind: "connect.apply.preview", provider: plan.provider, rowId: plan.rowId, envVar: plan.envVar, path },
         };
     }

@@ -26,7 +26,8 @@ import { claudeCredentialsPath, codexAuthPath, dshEnvPath, geminiOauthCredsPath,
 // The apply half lives in its own module (connect-apply.ts) and reads the
 // provider table from here. The import cycle is function-body only: neither
 // module touches the other's bindings at module-evaluation time.
-import { runConnectApply } from "./connect-apply.js";
+import { applyPlan, runConnectApply } from "./connect-apply.js";
+import { planCustomRoute } from "./connect-custom.js";
 /** Environment variables that map one-to-one onto a connector provider. */
 const CONNECTOR_ENV_VARS = Object.freeze([
     "ANTHROPIC_API_KEY",
@@ -394,10 +395,52 @@ export function renderSmoke(ctx, provider, outcome) {
         ...followUp,
     ].join("\n");
 }
+/** Usage line for the custom form, printed on any parse failure. */
+export const CUSTOM_USAGE = "usage: /bridge-connect custom --url <base-url> --model <model-id> " +
+    "[--name <route>] [--key-env <VAR_NAME>] [--display <label>] [--api <protocol>] " +
+    "[--context <n>] [--max-tokens <n>] [--apply]";
+/** Parse an integer flag, or undefined when absent. Throws on garbage. */
+function intFlag(args, key) {
+    const raw = args[key];
+    if (raw === undefined || raw.trim() === "")
+        return undefined;
+    const value = Number(raw.trim());
+    if (!Number.isInteger(value) || value <= 0)
+        throw new Error(`--${key} must be a positive integer; got '${raw}'`);
+    return value;
+}
+/**
+ * Build the custom-route request from flags. `--key-env` takes a NAME; a value
+ * that looks like a secret is refused downstream by `assertNotSecret`, before
+ * it can reach a plan or a file.
+ */
+export function parseCustomArgs(args) {
+    const url = (args["url"] ?? args["base-url"] ?? "").trim();
+    const model = (args["model"] ?? "").trim();
+    if (url === "" || model === "")
+        throw new Error(CUSTOM_USAGE);
+    const request = {
+        route: (args["name"] ?? "").trim(),
+        baseUrl: url,
+        model,
+        displayName: (args["display"] ?? "").trim(),
+        modelName: (args["model-name"] ?? "").trim(),
+        apiKeyEnv: (args["key-env"] ?? "").trim(),
+        api: (args["api"] ?? "").trim(),
+        ...(intFlag(args, "context") === undefined ? {} : { contextWindow: intFlag(args, "context") }),
+        ...(intFlag(args, "max-tokens") === undefined ? {} : { maxTokens: intFlag(args, "max-tokens") }),
+    };
+    return request;
+}
 export function parseConnectArgs(args) {
     const verb = (args["_"] ?? "").toLowerCase();
     if (verb === "")
         return { mode: "list" };
+    if (verb === "custom") {
+        // Flag validation is deferred to the runner so a bad flag renders the
+        // custom usage body rather than the generic connect one.
+        return { mode: "custom", confirmed: args["apply"] !== undefined };
+    }
     if (verb === "apply") {
         const provider = (args["rest"] ?? "").trim().split(/\s+/)[0] ?? "";
         if (provider === "" || provider.startsWith("-")) {
@@ -414,7 +457,7 @@ export function parseConnectArgs(args) {
         return { mode: "test", provider: provider.toLowerCase() };
     }
     if (PROVIDER_PROFILES[verb] === undefined) {
-        throw new Error(`usage: /connect [test <provider>] [apply <provider> [--apply]]; got '${verb}'`);
+        throw new Error(`usage: /connect [test <provider>] [apply <provider> [--apply]] [custom --url ... --model ...]; got '${verb}'`);
     }
     return { mode: "list", provider: verb };
 }
@@ -442,6 +485,20 @@ export async function runConnect(ctx, args) {
             ].join("\n"),
         };
     }
+    if (invocation.mode === "custom") {
+        try {
+            // parseCustomArgs and planCustomRoute validate together; a bad flag
+            // never reaches the filesystem.
+            const plan = planCustomRoute(parseCustomArgs(args));
+            return applyPlan(ctx, plan, invocation.confirmed === true);
+        }
+        catch (error) {
+            return {
+                markdown: ["### /bridge-connect custom", "", error.message, "", CUSTOM_USAGE, ""].join("\n"),
+                data: { kind: "connect.custom.refused", error: error.message },
+            };
+        }
+    }
     if (invocation.mode === "apply") {
         return runConnectApply(ctx, invocation.provider, invocation.confirmed === true);
     }
@@ -465,7 +522,7 @@ export const connectCommand = {
     name: "bridge-connect",
     aliases: [],
     summary: "Detect local provider credentials and report them masked",
-    usage: "[provider] [test <provider>] [apply <provider> [--apply]]",
+    usage: "[provider] [test <provider>] [apply <provider> [--apply]] [custom --url <url> --model <id> [--apply]]",
     run: runConnect,
 };
 //# sourceMappingURL=connect.js.map

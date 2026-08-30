@@ -13,12 +13,23 @@
  * Invariants carried from CHARTER.md and the connect spec:
  *  - Detection is read-only and metadata-only; credential values never enter
  *    the transcript (connect S1/S3: only masked display strings are reused).
- *  - The only file this command writes is its own state file. Route writes,
- *    MCP imports, and memory imports are performed by their own commands,
+ *  - Two files this command may write, and no others: its own state file
+ *    always, and the profile patch at the route step WHEN the user supplies
+ *    `--url` and `--model` there. The route write is the one thing standing
+ *    between "installed" and "answering a prompt"
+ *    (docs/research/e2e-npx-journey.md:331), so this flow performs it rather
+ *    than printing a command the user must find and re-type. It goes through
+ *    `applyRoute`, which takes a `.bak` first, rolls back on failure, and
+ *    re-reads the file to verify the rows landed.
+ *  - The route write stores a credential REFERENCE NAME only. No key value is
+ *    accepted by, passed through, or rendered by this command; a secret-shaped
+ *    `--key-env` is refused before anything is written.
+ *  - MCP imports and memory imports are still performed by their own commands,
  *    which this flow prints as ready-to-run lines rather than executing.
  *  - No network calls.
  */
 import type { BridgeContext, CommandResult, DetectionRow } from "../lib/types.js";
+import { type ApplyIo, type ApplyOutcome, type RoutePlan } from "./connect-apply.js";
 import { type CatalogEntry } from "../lib/catalog-access.js";
 /** The seven steps, in order. The index in this array is the progress number. */
 export declare const SETUP_STEPS: readonly ["welcome", "harness", "route", "health", "import", "recommend", "done"];
@@ -98,6 +109,8 @@ export interface SetupOptions {
     readonly manifestPath?: string;
     readonly cardsDir?: string;
     readonly io?: SetupIo;
+    /** Filesystem surface for the route write; injected so tests stay hermetic. */
+    readonly applyIo?: ApplyIo;
     readonly now?: Date;
     readonly env?: Readonly<Record<string, string | undefined>>;
 }
@@ -111,6 +124,34 @@ export declare function recommendPlugins(entries: readonly CatalogEntry[], grade
 export declare function isSkip(answer: string): boolean;
 /** Parse the free-text answer out of the shared `_`/`rest` args convention. */
 export declare function parseAnswer(args: Readonly<Record<string, string>>): string;
+interface StepContext {
+    readonly ctx: BridgeContext;
+    readonly io: SetupIo;
+    readonly state: SetupState;
+    readonly harness: HarnessFacts;
+    readonly options: SetupOptions;
+}
+/** Outcome of the route step's write attempt, rendered by `routeWrittenBody`. */
+export interface RouteWriteResult {
+    readonly plan: RoutePlan;
+    readonly outcome: ApplyOutcome;
+}
+/**
+ * True when the invocation at the route step carries a route to write rather
+ * than an answer to record. Endpoint and model together are the signal: either
+ * one alone cannot produce a loadable route.
+ */
+export declare function isRouteWrite(args: Readonly<Record<string, string>>): boolean;
+/**
+ * Perform the route write for the setup flow: plan, back up, write, re-read.
+ * Returns the failure as a value rather than throwing, because a setup step
+ * must always render a body.
+ */
+export declare function writeRouteFromArgs(ctx: BridgeContext, args: Readonly<Record<string, string>>, io: ApplyIo): RouteWriteResult | {
+    readonly error: string;
+};
+/** What the route step renders after a write attempt: what changed, verified how. */
+export declare function routeWrittenBody(step: StepContext, result: RouteWriteResult): string;
 /**
  * Advance the state machine by at most one step. Pure over its inputs so the
  * transition table is testable without touching disk.
@@ -126,4 +167,5 @@ export declare function applyAnswer(state: SetupState, answer: string, now: Date
  * carrying an answer records it, advances, and renders the next step.
  */
 export declare function runSetup(ctx: BridgeContext, args: Readonly<Record<string, string>>, options?: SetupOptions): Promise<CommandResult>;
+export {};
 //# sourceMappingURL=setup.d.ts.map

@@ -12,7 +12,8 @@
  *   4. seeds the profile, then creates .credentials.yaml at mode 600
  *   5. installs dsh-bridge into that profile
  *   6. tells dsh-bridge which profile it runs in, so its own doctor reports it
- *   7. prints the exact next command
+ *   7. pins the browser-capable workspace directory picker
+ *   8. prints the exact next command
  *
  * It is idempotent: every step checks for its own result first and reports
  * "already done" instead of repeating work. It never overwrites a file it did
@@ -409,14 +410,22 @@ function configureProfileName(opts) {
     skip("the patch already configures the bridge row, left untouched");
     return;
   }
+  appendPatchBlock(opts, path, current, block, `the "- id: bridge" block naming profile ${opts.profile}`);
+}
+
+/**
+ * Append `block` to an existing list-shaped cordis patch, conservatively.
+ * Handles the fresh-profile empty flow sequence ("[]"), refuses to touch a
+ * non-list file, and keeps a .bak of anything it rewrites.
+ */
+function appendPatchBlock(opts, path, current, block, description) {
   const trimmed = current.replace(/^(?:[ \t]*#.*\n|[ \t]*\n)*/, "");
   // A fresh dsh profile ships an explicit empty flow sequence ("[]"). That IS a list,
   // so treat it as append-able instead of dumping YAML on the user for the final step.
-  const isEmptyFlowSeq = trimmed.trim() === "[]";
-  if (isEmptyFlowSeq) {
+  if (trimmed.trim() === "[]") {
     const rewritten = current.replace(/^\s*\[\]\s*$/m, block.replace(/\n$/, ""));
     writeFile(opts, path, rewritten, 0o644);
-    if (!opts.dryRun) ok(`configured the bridge row in ${path}`);
+    if (!opts.dryRun) ok(`wrote ${description} into ${path}`);
     return;
   }
   if (trimmed.trim() !== "" && !trimmed.startsWith("-")) {
@@ -427,12 +436,75 @@ function configureProfileName(opts) {
   }
   if (opts.dryRun) {
     plan(`copy: ${path} -> ${path}.bak`);
-    plan(`append to ${path}: the "- id: bridge" block naming profile ${opts.profile}`);
+    plan(`append to ${path}: ${description}`);
     return;
   }
   writeFileSync(`${path}.bak`, current, "utf8");
   writeFileSync(path, `${current.endsWith("\n") ? current : `${current}\n`}${block}`, "utf8");
-  ok(`appended the bridge profile block to ${path} (previous at ${path}.bak)`);
+  ok(`appended ${description} to ${path} (previous at ${path}.bak)`);
+}
+
+/**
+ * Harness friction F1/N3: "Choose workspace" does nothing in a browser.
+ *
+ * The stock web app mounts the adaptive row
+ * (`@deepseek-ai/dsh-web-app/cordis.patch.yml:96`, id `directory-picker`,
+ * name `@deepseek-ai/dsh-host-directory-picker-auto`). That plugin samples the
+ * host once at boot and resolves `native` whenever the bind host is 127.0.0.1
+ * and the platform is darwin or win32
+ * (`dsh-host-directory-picker-auto/lib/index.js:63-69`), then mounts the
+ * native backend and its native client surface
+ * (same file, lines 94-109, 117-133). The native backend opens an OS dialog on
+ * the *server's* display, so a browser on any other machine, or on a headless
+ * host, sees the click land and nothing happen: no dialog, no error.
+ *
+ * The auto row's own doc comment states the supported escape hatch: "pinning an
+ * interaction remains composing that pair directly instead of this row". So we
+ * disable the adaptive row and mount the browse pair, whose backend renders
+ * nothing on the host display and serves remote clients over RPC
+ * (`dsh-host-directory-picker-browse/lib/index.js:7-14`). The browse picker
+ * works for local browsers too, so this is safe on every platform.
+ *
+ * Conservative, like the bridge row above: if the patch already mentions any
+ * directory-picker row, the user has made a choice and we leave it alone.
+ */
+function configureBrowsePicker(opts) {
+  step("Make the workspace picker usable in a browser");
+  const path = join(opts.dshHome, "profiles", opts.profile, "cordis.patch.yml");
+  const block = [
+    "# Pinned by the dsh-bridge installer: the stock 'directory-picker' row is",
+    "# adaptive and resolves to the native OS dialog on a local darwin/win32",
+    "# host, which opens on the server's display and is invisible to a browser.",
+    "# The browse pair renders in the page and works everywhere. Delete this",
+    "# block and reboot to go back to the adaptive row.",
+    "- id: directory-picker",
+    "  disabled: true",
+    "- insert:",
+    "    - id: directory-picker-browse",
+    "      name: '@deepseek-ai/dsh-host-directory-picker-browse'",
+    "    - id: ui-directory-picker-browse",
+    "      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'",
+    "",
+  ].join("\n");
+
+  if (!existsSync(path)) {
+    // configureProfileName runs first and always leaves a file behind, so this
+    // is only reachable under --dry-run against a home that does not exist yet.
+    if (opts.dryRun) {
+      plan(`append to ${path}: disable "directory-picker", insert the browse host+client pair`);
+      return;
+    }
+    writeFile(opts, path, block, 0o644);
+    ok(`created ${path} with the browse directory-picker pair`);
+    return;
+  }
+
+  const current = readFileSync(path, "utf8");
+  if (/directory-picker/.test(current)) {
+    skip("the patch already names a directory-picker row, left untouched");
+    return;
+  }
+  appendPatchBlock(opts, path, current, block, 'disable "directory-picker", insert the browse host+client pair');
 }
 
 function printNext(opts, dsh) {
@@ -444,8 +516,14 @@ function printNext(opts, dsh) {
   console.log(`    ${bootCommand}\n`);
   console.log("Then, in the browser at http://127.0.0.1:3080, run:\n");
   console.log("    /bridge-setup\n");
-  console.log("That walks you through connecting a model. You need a provider");
-  console.log("endpoint and an API key; nothing else is configured yet.");
+  console.log("The harness may first offer a DeepSeek API key modal; press");
+  console.log('"Configure later" to stay on the dsh-bridge path.');
+  console.log('Then press "Choose workspace". The installer pinned the in-page');
+  console.log("browse picker, so the directory list renders in the browser and");
+  console.log("no dialog opens on the machine running the harness. Pick a");
+  console.log("directory; the composer unlocks.");
+  console.log("\n/bridge-setup walks you through connecting a model. You need a");
+  console.log("provider endpoint and an API key; nothing else is configured yet.");
   console.log(dim("Full walkthrough, including a custom OpenAI-compatible provider: docs/getting-started.md"));
 }
 
@@ -469,6 +547,7 @@ function main() {
   prepareCredentials(opts);
   installBridge(opts, dsh, env);
   configureProfileName(opts);
+  configureBrowsePicker(opts);
   printNext(opts, dsh);
 }
 

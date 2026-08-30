@@ -22,6 +22,7 @@ import { readHostServices, resolveProfile } from "./lib/host.js";
 import { bridgeCommandTable } from "./lib/registry.js";
 import { dshHomeDir, homeDir, profilePackageJsonPath, profilePatchPath } from "./lib/paths.js";
 import * as output from "./lib/output.js";
+import { primeBlankSession } from "./lib/session-priming.js";
 export const name = "dsh-bridge";
 /** Services consumed from the host (seams doc §3.1). */
 export const inject = ["commands"];
@@ -91,6 +92,12 @@ function registerCommand(ctx, command, bridgeContext) {
             // from the invoking agent and the mounted services rather than cached at
             // mount time (F6). A composition mounting neither yields an empty object
             // and every affected row degrades on its own.
+            // Zero-turn sessions do not render command output at all (journey report
+            // §5, BUG 2; mechanism and citations in lib/session-priming.ts). The
+            // harness owns the defect; this is the only lever a plugin has, and it
+            // must run before the result is returned so the row exists by the time
+            // the client rebuilds. It never throws and never fails the command.
+            primeBlankSession(agent?.session);
             const host = readHostServices(ctx, agent, MOUNTED_FEATURES);
             const invocationContext = makeBridgeContext({
                 profile: bridgeContext.profile,

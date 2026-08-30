@@ -12,9 +12,10 @@ node install.mjs --dry-run     # prints every command and file write, changes no
 node install.mjs
 ```
 
-That covers sections 1, 2, 3, 4, and 6 below. It does not cover section 5,
-connecting a model, which is the part that requires your endpoint and your key.
-Skip to [Connect a model](#5-connect-a-model).
+That covers sections 1, 2, 3, 4, and 6 below, and it pins the in-browser
+workspace picker so the "Choose workspace" button works. It does not cover
+section 5, connecting a model, which is the part that requires your endpoint and
+your key. Skip to [Connect a model](#5-connect-a-model).
 
 Sections 1 through 4 and 6 are written out anyway, because the installer is a
 convenience and not a dependency: everything it does you can do by hand, and
@@ -226,8 +227,16 @@ Two things happen on first load that are not failures:
 
 - **An internal-testing modal covers the composer.** Click Continue once; the
   dismissal persists.
-- **The composer is locked to "Choose a workspace to start."** Pick a workspace
-  and it unlocks.
+- **The composer is locked to "Choose a workspace to start."** Press "Choose
+  workspace". If you installed with `scripts/install.mjs`, the directory list
+  renders inside the page and no dialog opens on the machine running the
+  harness; pick a directory and the composer unlocks.
+- **The harness may offer its own "Add an API key" modal.** That is DeepSeek's
+  key path, not dsh-bridge's. Press "Configure later" to stay on the route you
+  configured in section 5.
+
+If you installed by hand and the "Choose workspace" click does nothing, you are
+hitting the native picker; see [Known rough edges](#known-rough-edges).
 
 ## 9. Use the commands
 
@@ -246,13 +255,14 @@ rather than debug them.
 
 | What you see | What it is |
 |---|---|
-| "Choose workspace" does nothing in a browser | The auto picker chose the native backend, which opens a dialog on the *server's* display. A hard stop for remote `dsh web`. See the fix below |
+| "Choose workspace" does nothing in a browser | Hand installs only. The auto picker chose the native backend, which opens a dialog on the *server's* display. `scripts/install.mjs` pins the browse pair and prevents this; see the fix below |
 | Command output renders as truncated one-line chips of raw markdown | The harness renders `command/done` text unformatted. In-box commands render the same way |
 | `/bridge-doctor` reports DEGRADED for a `default` profile you never used | The plugin defaults its profile name rather than deriving it. The installer writes the `- id: bridge` / `config.profile` block that fixes this; if you installed by hand, add it yourself (see below) |
 | `/bridge-status` shows MODEL/BRIDGE/TOKENS unavailable | Those seams are declared but not yet populated |
 | `/bridge-browse` says the catalog is unavailable | The published package omits `docs/catalog/manifest.json` |
 
-Fix for the workspace picker, in `$DSH_HOME/profiles/web/cordis.patch.yml`:
+Fix for the workspace picker, in `$DSH_HOME/profiles/web/cordis.patch.yml`. The
+installer writes this block for you; add it by hand if you installed by hand:
 
 ```yaml
 - id: directory-picker
@@ -265,6 +275,15 @@ Fix for the workspace picker, in `$DSH_HOME/profiles/web/cordis.patch.yml`:
 ```
 
 Both faces must be named: the backend and the client surface. Reboot after.
+
+The stock profile mounts `@deepseek-ai/dsh-host-directory-picker-auto`, which
+samples the host once at boot and picks `native` whenever the bind host is
+`127.0.0.1` on macOS or Windows. The native backend opens an OS dialog on the
+server's display, so a browser anywhere else sees the click land and nothing
+change. The browse pair renders the listing in the page instead and works on
+every platform, local or remote, which is why the installer pins it
+unconditionally. To go back to the adaptive row, delete the block and reboot;
+the installer will not re-add it while any `directory-picker` row is present.
 
 Fix for the DEGRADED doctor report, in the same file. The installer writes this;
 add it by hand if you installed by hand:

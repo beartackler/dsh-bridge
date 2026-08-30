@@ -13,15 +13,27 @@
  * Invariants carried from CHARTER.md and the connect spec:
  *  - Detection is read-only and metadata-only; credential values never enter
  *    the transcript (connect S1/S3: only masked display strings are reused).
- *  - The only file this command writes is its own state file. Route writes,
- *    MCP imports, and memory imports are performed by their own commands,
+ *  - Two files this command may write, and no others: its own state file
+ *    always, and the profile patch at the route step WHEN the user supplies
+ *    `--url` and `--model` there. The route write is the one thing standing
+ *    between "installed" and "answering a prompt"
+ *    (docs/research/e2e-npx-journey.md:331), so this flow performs it rather
+ *    than printing a command the user must find and re-type. It goes through
+ *    `applyRoute`, which takes a `.bak` first, rolls back on failure, and
+ *    re-reads the file to verify the rows landed.
+ *  - The route write stores a credential REFERENCE NAME only. No key value is
+ *    accepted by, passed through, or rendered by this command; a secret-shaped
+ *    `--key-env` is refused before anything is written.
+ *  - MCP imports and memory imports are still performed by their own commands,
  *    which this flow prints as ready-to-run lines rather than executing.
  *  - No network calls.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bulletList, gradeCell, heading, table } from "../lib/output.js";
-import { detectCredentials, PROVIDER_PROFILES } from "./connect.js";
+import { detectCredentials, parseCustomArgs, PROVIDER_PROFILES } from "./connect.js";
+import { applyRoute, credentialInstructions, nodeApplyIo, routeBlock } from "./connect-apply.js";
+import { planCustomRoute } from "./connect-custom.js";
 import { loadCardGrades } from "./browse.js";
 import { loadManifestCached, repoBase, resolveCatalogPaths } from "../lib/catalog-access.js";
 import { matchCatalog } from "./suggest.js";
@@ -365,6 +377,89 @@ function harnessBody(step) {
         question("Is this your first coding harness, or are you coming from another one? Answer `first` or `migrant`.", guess),
     ].join("\n");
 }
+/**
+ * True when the invocation at the route step carries a route to write rather
+ * than an answer to record. Endpoint and model together are the signal: either
+ * one alone cannot produce a loadable route.
+ */
+export function isRouteWrite(args) {
+    return (args["url"] ?? args["base-url"] ?? "").trim() !== "" && (args["model"] ?? "").trim() !== "";
+}
+/**
+ * Perform the route write for the setup flow: plan, back up, write, re-read.
+ * Returns the failure as a value rather than throwing, because a setup step
+ * must always render a body.
+ */
+export function writeRouteFromArgs(ctx, args, io) {
+    let plan;
+    try {
+        plan = planCustomRoute(parseCustomArgs(args));
+    }
+    catch (error) {
+        return { error: error.message };
+    }
+    return { plan, outcome: applyRoute(io, ctx.paths.profilePatch, plan) };
+}
+/** What the route step renders after a write attempt: what changed, verified how. */
+export function routeWrittenBody(step, result) {
+    const { plan, outcome } = result;
+    if (!outcome.written) {
+        return [
+            heading("Setup - model route"),
+            progress("route"),
+            "",
+            `The route was not written: ${outcome.error ?? "unknown failure"}`,
+            "",
+            `File left unchanged: ${step.ctx.paths.profilePatch}`,
+            "",
+            question("Fix the above and run the same command again, or answer `skip` to move on.", "skip"),
+        ].join("\n");
+    }
+    return [
+        heading("Setup - model route"),
+        progress("route"),
+        "",
+        "The route is written. Here is exactly what changed.",
+        "",
+        step.ctx.output.card("Route written", [
+            ["file", step.ctx.paths.profilePatch],
+            ["provider row", `llm-pi-ai -> providers.${plan.provider}`],
+            ["selection row", `agent-default-model -> ${plan.provider}`],
+            ["credential", `$${plan.envVar} (referenced by name; the value is not in this file)`],
+            ["backup", outcome.backupPath ?? "none (the file did not exist before)"],
+            ["verified", outcome.verified === true ? "both rows found on re-read" : "NOT verified"],
+        ]),
+        "What landed, read back from the file:",
+        "",
+        "```yaml",
+        routeBlock(plan),
+        "```",
+        "",
+        ...credentialInstructions(step.ctx, plan.envVar),
+        "Then restart dsh so the profile patch is loaded.",
+        "",
+        question("Answer `yes` when the route is in place, or `skip` to move on.", "yes"),
+    ].join("\n");
+}
+/**
+ * The step's own offer to finish the job here. Every provider in the detection
+ * table is either one pi-ai already ships or something arbitrary; the second
+ * case is the majority of real endpoints and had no path at all before
+ * (docs/research/e2e-npx-journey.md:283-291). This asks for the three facts a
+ * route needs and writes it in place.
+ */
+function customRouteOffer(step) {
+    return [
+        "Or connect any OpenAI-compatible endpoint right here. Give this step an endpoint, a model id, and the NAME of the credential to reference:",
+        "",
+        "```",
+        "/bridge-setup --url https://opencode.ai/zen/go/v1 --model qwen3.5-plus --name opencode-zen --key-env OPENCODE_ZEN_API_KEY",
+        "```",
+        "",
+        `That writes both required rows into ${step.ctx.paths.profilePatch}, takes a \`.bak\` of the previous file first, and reads it back to confirm. Do not paste the key itself: \`--key-env\` is a name, and a key-shaped value is refused.`,
+        "",
+    ];
+}
 function routeBody(step, rows) {
     const providers = connectedProviders(rows);
     const migrant = step.state.answers["harness"] === "migrant";
@@ -387,6 +482,7 @@ function routeBody(step, rows) {
             ]),
             "dsh-bridge writes the variable name into your profile config, never the key itself.",
             "",
+            ...customRouteOffer(step),
             question("Have you got a key exported now? Answer `yes` to re-check, or `skip` to do this later.", "skip"),
         ].join("\n");
     }
@@ -404,6 +500,7 @@ function routeBody(step, rows) {
         "",
         `Preview the route before anything is written: \`/bridge-connect apply ${providers[0]}\`. Add \`--apply\` to write it.`,
         "",
+        ...customRouteOffer(step),
         question(`Which provider should the default route use? Answer a provider name (${providers.join(", ")}).`, providers[0] ?? "skip"),
     ].join("\n");
 }
@@ -549,6 +646,49 @@ export async function runSetup(ctx, args, options = {}) {
     let state = reset ? freshState(now) : loadState(io, statePath, now);
     const rawAnswer = parseAnswer(args);
     const answer = rawAnswer.toLowerCase();
+    // A route write is not an answer: it is the step doing its job. Handled
+    // before the state machine advances, so a failed write leaves the user on
+    // the route step to retry, and a successful one reports before moving on.
+    if (state.step === "route" && isRouteWrite(args)) {
+        const written = writeRouteFromArgs(ctx, args, options.applyIo ?? nodeApplyIo());
+        if ("error" in written) {
+            return {
+                markdown: [
+                    heading("Setup - model route"),
+                    progress("route"),
+                    "",
+                    written.error,
+                    "",
+                    `Nothing was written. File left unchanged: ${ctx.paths.profilePatch}`,
+                    "",
+                ].join("\n"),
+                data: { kind: "setup.route.refused", step: "route", error: written.error },
+            };
+        }
+        const harnessNow = collectHarnessFacts(io, ctx);
+        const stepCtxNow = { ctx, io, state, harness: harnessNow, options };
+        if (written.outcome.written) {
+            // Record it as the route answer and persist the advance, but render the
+            // route report rather than the next step: the user must see what landed
+            // and where the key value goes before moving on. The next bare
+            // `/bridge-setup` continues at the health step.
+            saveState(io, statePath, applyAnswer(state, `route:${written.plan.provider}`, now));
+        }
+        return {
+            markdown: routeWrittenBody(stepCtxNow, written),
+            data: {
+                kind: written.outcome.written ? "setup.route.written" : "setup.route.refused",
+                step: "route",
+                provider: written.plan.provider,
+                rowId: written.plan.rowId,
+                envVar: written.plan.envVar,
+                path: ctx.paths.profilePatch,
+                backupPath: written.outcome.backupPath,
+                verified: written.outcome.verified === true,
+                error: written.outcome.error,
+            },
+        };
+    }
     // An answer applies to the step the user was last shown. `done` is terminal:
     // it re-renders rather than walking off the end of the table.
     if (answer !== "" && state.step !== "done") {

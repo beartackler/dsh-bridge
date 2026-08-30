@@ -62,6 +62,18 @@ export interface RoutePlan {
     readonly envVar: string;
     /** Rendered patch entry, one YAML line per element, no trailing newline. */
     readonly lines: readonly string[];
+    /**
+     * Command that re-runs this exact plan with consent. Present when the plan
+     * carries arguments the short `apply <provider>` form cannot express.
+     */
+    readonly applyCommand?: string;
+    /**
+     * True when the plan also writes the separate `agent-default-model` row.
+     * Declaring a provider does not select it, so a plan that claims to connect
+     * a model must verify both rows landed
+     * (dsh-agent-default-model/lib/types/index.d.ts:19-22).
+     */
+    readonly selects?: boolean;
 }
 /**
  * Build the patch entry for one provider. Pure: derived from the static
@@ -70,6 +82,15 @@ export interface RoutePlan {
 export declare function planRoute(provider: string): RoutePlan;
 /** The whole appended block, including its provenance comment. */
 export declare function routeBlock(plan: RoutePlan): string;
+/**
+ * Where the key value actually goes. `apiKeyEnv` is a credential REFERENCE
+ * name resolved through the credentials seam, not a shell variable that must
+ * exist (dsh-llm-pi-ai/lib/types/config.d.ts:55; docs/getting-started.md:153).
+ * Both places that accept it are named here because a user who only exports a
+ * shell variable and never writes the credentials file gets a route that fails
+ * with no useful message.
+ */
+export declare function credentialInstructions(ctx: BridgeContext, envVar: string): readonly string[];
 /** Render the plan as the diff a user reads before consenting. */
 export declare function renderRouteDiff(ctx: BridgeContext, plan: RoutePlan, existing: boolean): string;
 /**
@@ -79,8 +100,23 @@ export declare function renderRouteDiff(ctx: BridgeContext, plan: RoutePlan, exi
  * load. Structural check by construction: this package carries no YAML parser.
  */
 export declare function isAppendableSequence(contents: string): boolean;
-/** True when this provider's row is already present in the patch file. */
+/**
+ * True when this plan's rows are already present in the patch file. A plan
+ * that also selects the route must show BOTH rows: a provider declared but not
+ * selected is the silent half-route the journey documents
+ * (docs/getting-started.md:150-152), and reporting it as landed would be a lie.
+ */
 export declare function routeAlreadyPresent(contents: string, plan: RoutePlan): boolean;
+/**
+ * Drop a lone `[]` from an otherwise entry-less file, keeping the comments.
+ * The empty list carries no entries, so nothing is lost, and `[]` followed by
+ * `- id: ...` would not be a valid YAML document.
+ */
+export declare function stripEmptyFlowSeq(contents: string): string;
+/** True when the provider row alone is present, ignoring any selection row. */
+export declare function routeDeclared(contents: string, plan: RoutePlan): boolean;
+/** True when an `agent-default-model` row selects this route. */
+export declare function selectionPresent(contents: string, route: string): boolean;
 export interface ApplyOutcome {
     readonly written: boolean;
     readonly backupPath?: string;
@@ -96,7 +132,7 @@ export interface ApplyOutcome {
  */
 export declare function applyRoute(io: ApplyIo, path: string, plan: RoutePlan): ApplyOutcome;
 /** Consent copy for the preview form. `--apply` is the explicit consent. */
-export declare function confirmationPrompt(provider: string): readonly string[];
+export declare function confirmationPrompt(provider: string, applyCommand?: string): readonly string[];
 /** Post-apply body: what changed, how to undo it, and the smoke command. */
 export declare function renderApplied(ctx: BridgeContext, plan: RoutePlan, outcome: ApplyOutcome): string;
 /**
@@ -105,4 +141,10 @@ export declare function renderApplied(ctx: BridgeContext, plan: RoutePlan, outco
  * verifies it.
  */
 export declare function runConnectApply(ctx: BridgeContext, provider: string, apply: boolean, io?: ApplyIo): CommandResult;
+/**
+ * Preview-or-write for an already-built plan. Shared by the provider-table
+ * path above and by the custom OpenAI-compatible path (connect-custom.ts), so
+ * both get the same backup, rollback, and post-write verification.
+ */
+export declare function applyPlan(ctx: BridgeContext, plan: RoutePlan, apply: boolean, io?: ApplyIo): CommandResult;
 //# sourceMappingURL=connect-apply.d.ts.map

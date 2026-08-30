@@ -25,5 +25,9 @@
     "type": "git",
     "url": "git+https://github.com/beartackler/dsh-bridge.git",
     "directory": "packages/create-dsh-bridge"
+  },
+  "homepage": "https://github.com/beartackler/dsh-bridge/tree/main/packages/create-dsh-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/beartackler/dsh-bridge/issues"
   }
 }

@@ -31,25 +31,35 @@ dsh-bridge is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 
 ## Install
 
-From a machine with nothing installed:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs | node -
+npx create-dsh-bridge
 ```
 
-That gets you a booted harness with dsh-bridge mounted. It checks Node and pnpm with a concrete fix for each failure, installs the DSH runtime if none is on your PATH, creates an isolated `DSH_HOME` so your real `~/.dsh` is untouched, pre-creates `.credentials.yaml` at mode 600 (the harness refuses to boot otherwise), installs dsh-bridge into the `web` profile, and prints the exact command to boot.
+That is the whole thing. It checks Node and pnpm with a concrete fix for each failure,
+installs the DSH runtime if none is on your PATH, creates an isolated `DSH_HOME` so your real
+`~/.dsh` is untouched, installs dsh-bridge into the `web` profile, wires the profile config,
+and prints the command to boot.
 
-Re-running is safe. Every step checks for its own result first and reports "already done" instead of repeating work, and it never overwrites a file it did not create.
+Re-running is safe: every step checks for its own result first and reports "already done"
+instead of repeating work, and it never overwrites a file it did not create.
 
-Piping a script into an interpreter means trusting what is on the other end. The same file, read first:
+See exactly what it will do before it does anything:
+
+```bash
+npx create-dsh-bridge --dry-run     # prints every command and file write, changes nothing
+```
+
+Useful flags: `--ref <sha>` pins both the installer and the plugin so a later push cannot
+change what runs, `--profile <name>` picks a different profile, `--no-isolate` uses your real
+`~/.dsh` instead of a scratch home.
+
+Prefer not to pipe from npm? The installer is a single readable file:
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/beartackler/dsh-bridge/main/scripts/install.mjs
-less install.mjs && node install.mjs --dry-run   # prints every command and file write, changes nothing
+less install.mjs && node install.mjs --dry-run
 node install.mjs
 ```
-
-Useful flags: `--ref <commit-sha>` pins the plugin so a later push cannot change what runs, `--profile <name>` picks a different profile, `--no-isolate` uses your real `~/.dsh` instead of a scratch home.
 
 ### What you still have to do yourself
 

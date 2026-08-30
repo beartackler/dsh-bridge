@@ -1,0 +1,29 @@
+{
+  "name": "create-dsh-bridge",
+  "version": "0.1.0",
+  "description": "One command to get DeepSeek Harness running with dsh-bridge: familiar slash commands and an audited plugin catalog.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "create-dsh-bridge": "./bin/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "installer",
+    "cordis",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beartackler/dsh-bridge.git",
+    "directory": "packages/create-dsh-bridge"
+  }
+}

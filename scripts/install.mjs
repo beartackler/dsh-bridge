@@ -410,6 +410,15 @@ function configureProfileName(opts) {
     return;
   }
   const trimmed = current.replace(/^(?:[ \t]*#.*\n|[ \t]*\n)*/, "");
+  // A fresh dsh profile ships an explicit empty flow sequence ("[]"). That IS a list,
+  // so treat it as append-able instead of dumping YAML on the user for the final step.
+  const isEmptyFlowSeq = trimmed.trim() === "[]";
+  if (isEmptyFlowSeq) {
+    const rewritten = current.replace(/^\s*\[\]\s*$/m, block.replace(/\n$/, ""));
+    writeFile(opts, path, rewritten, 0o644);
+    if (!opts.dryRun) ok(`configured the bridge row in ${path}`);
+    return;
+  }
   if (trimmed.trim() !== "" && !trimmed.startsWith("-")) {
     note(`${path} is not a YAML list, so appending to it could corrupt it.`);
     note("Add this to that file yourself, then reboot:");

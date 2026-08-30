@@ -12,6 +12,8 @@
   "files": [
     "index.js",
     "cordis.patch.yml",
+    "screenshots.json",
+    "assets",
     "packages/dsh-bridge/dist",
     "packages/dsh-bridge/data",
     "tools/scan/dist",
